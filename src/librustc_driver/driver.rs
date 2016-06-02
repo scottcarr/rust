@@ -964,6 +964,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
             passes.push_pass(box mir::transform::type_check::TypeckMir);
             passes.push_pass(box mir::transform::simplify_cfg::SimplifyCfg);
             passes.push_pass(box mir::transform::remove_dead_blocks::RemoveDeadBlocks);
+            passes.push_pass(box mir::transform::eliminate_moves::EliminateMoves);
             // And run everything.
             passes.run_passes(tcx, &mut mir_map);
         });

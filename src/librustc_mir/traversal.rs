@@ -284,3 +284,17 @@ impl<'a, 'tcx> Iterator for ReversePostorder<'a, 'tcx> {
         })
     }
 }
+
+// Compute the predecessor list for all nodes in the CFG
+// WARNING! this list becomes invalid if you modify the CFG
+pub fn compute_predecessors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> Vec<Vec<BasicBlock>> {
+    let mut preds = vec![vec![]; mir.basic_blocks.len()];
+    for (index, data) in preorder(mir) {
+        if let Some(ref term) = data.terminator {
+            for &tgt in term.successors().iter() {
+                preds[tgt.index()].push(index);
+            }
+        }
+    }
+    preds
+}

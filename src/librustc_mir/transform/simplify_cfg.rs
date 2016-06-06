@@ -45,14 +45,16 @@ impl Pass for SimplifyCfg {}
 
 fn merge_consecutive_blocks(mir: &mut Mir) {
     // Build the precedecessor map for the MIR
-    let mut pred_count = vec![0u32; mir.basic_blocks.len()];
-    for (_, data) in traversal::preorder(mir) {
-        if let Some(ref term) = data.terminator {
-            for &tgt in term.successors().iter() {
-                pred_count[tgt.index()] += 1;
-            }
-        }
-    }
+    let preds = traversal::compute_predecessors(mir);
+    let mut pred_count: Vec<_> = preds.into_iter().map(|ps| ps.len()).collect();
+    //let mut pred_coutn = vec![0u32; mir.basic_blocks.len()];
+    //for (_, data) in traversal::preorder(mir) {
+    //    if let Some(ref term) = data.terminator {
+    //        for &tgt in term.successors().iter() {
+    //            pred_count[tgt.index()] += 1;
+    //        }
+    //    }
+    //}
 
     loop {
         let mut changed = false;

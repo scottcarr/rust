@@ -45,13 +45,15 @@ impl<'tcx> MirPass<'tcx> for BreakCleanupEdges {
         let mut pred_count = vec![0u32; mir.basic_blocks.len()];
 
         // Build the precedecessor map for the MIR
-        for (_, data) in traversal::preorder(mir) {
-            if let Some(ref term) = data.terminator {
-                for &tgt in term.successors().iter() {
-                    pred_count[tgt.index()] += 1;
-                }
-            }
-        }
+        //for (_, data) in traversal::preorder(mir) {
+        //    if let Some(ref term) = data.terminator {
+        //        for &tgt in term.successors().iter() {
+        //            pred_count[tgt.index()] += 1;
+        //        }
+        //    }
+        //}
+        let preds = traversal::compute_predecessors(mir);
+        let mut pred_count: Vec<_> = preds.into_iter().map(|ps| ps.len()).collect();
 
         let cleanup_map : BitVector = mir.basic_blocks
             .iter().map(|bb| bb.is_cleanup).collect();

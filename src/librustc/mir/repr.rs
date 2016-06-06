@@ -1054,3 +1054,4 @@ fn node_to_string(node_id: ast::NodeId) -> String {
 fn item_path_str(def_id: DefId) -> String {
     ty::tls::with(|tcx| tcx.item_path_str(def_id))
 }
+

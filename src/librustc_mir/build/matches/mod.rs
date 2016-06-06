@@ -398,7 +398,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         if otherwise.len() == 1 {
             otherwise[0]
         } else {
-            let join_block = self.cfg.start_new_block();
+            let join_block = self.cfg.start_new_block(otherwise);
             for block in otherwise {
                 self.cfg.terminate(block,
                                    scope_id,
@@ -577,7 +577,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             let guard = self.hir.mirror(guard);
             let guard_span = guard.span;
             let cond = unpack!(block = self.as_operand(block, guard));
-            let otherwise = self.cfg.start_new_block();
+            let otherwise = self.cfg.start_new_block(vec![block]);
             self.cfg.terminate(block,
                                scope_id,
                                guard_span,

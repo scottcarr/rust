@@ -318,7 +318,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                               &self.scopes[..idx],
                                               block));
             if let Some(ref free_data) = scope.free {
-                let next = self.cfg.start_new_block();
+                let next = self.cfg.start_new_block(vec![block]);
                 let free = build_free(self.hir.tcx(), &tmp, free_data, next);
                 self.cfg.terminate(block, scope.id, span, free);
                 block = next;
@@ -480,7 +480,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         let mut target = if let Some(target) = *cached_resume_block {
             target
         } else {
-            let resumeblk = cfg.start_new_cleanup_block();
+            let resumeblk = cfg.start_new_cleanup_block(vec![]);
             cfg.terminate(resumeblk, scopes[0].id, self.fn_span, TerminatorKind::Resume);
             *cached_resume_block = Some(resumeblk);
             resumeblk
@@ -503,7 +503,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             return block.unit();
         }
         let scope_id = self.innermost_scope_id();
-        let next_target = self.cfg.start_new_block();
+        let next_target = self.cfg.start_new_block(vec![]);
         let diverge_target = self.diverge_cleanup();
         self.cfg.terminate(block,
                            scope_id,
@@ -651,7 +651,7 @@ fn build_scope_drops<'tcx>(cfg: &mut CFG<'tcx>,
         let on_diverge = on_diverge.or_else(||{
             earlier_scopes.iter().rev().flat_map(|s| s.cached_block()).next()
         });
-        let next = cfg.start_new_block();
+        let next = cfg.start_new_block(vec![]);
         cfg.terminate(block, scope.id, drop_data.span, TerminatorKind::Drop {
             value: drop_data.value.clone(),
             target: next,
@@ -687,7 +687,7 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         target = if let Some(cached_block) = free_data.cached_block {
             cached_block
         } else {
-            let into = cfg.start_new_cleanup_block();
+            let into = cfg.start_new_cleanup_block(vec![]);
             cfg.terminate(into,
                           scope.id,
                           free_data.span,
@@ -704,7 +704,7 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         target = if let Some(cached_block) = drop_data.cached_block {
             cached_block
         } else {
-            let block = cfg.start_new_cleanup_block();
+            let block = cfg.start_new_cleanup_block(vec![]);
             cfg.terminate(block,
                           scope.id,
                           drop_data.span,

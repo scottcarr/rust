@@ -12,7 +12,7 @@ use hair::cx::Cx;
 use rustc::middle::region::{CodeExtent, CodeExtentData, ROOT_CODE_EXTENT};
 use rustc::ty::{self, Ty};
 use rustc::mir::repr::*;
-use rustc_data_structures::fnv::FnvHashMap;
+use rustc_data_structures::fnv::{FnvHashMap, FnvHashSet};
 use rustc::hir;
 use std::ops::{Index, IndexMut};
 use syntax::abi::Abi;
@@ -59,6 +59,7 @@ pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
 struct CFG<'tcx> {
     basic_blocks: Vec<BasicBlockData<'tcx>>,
+    edges: FnvHashSet<(BasicBlock, BasicBlock)>,
 }
 
 /// For each scope, we track the extent (from the HIR) and a
@@ -186,14 +187,14 @@ pub fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
             builder.args_and_body(block, return_ty, arguments, arg_scope_id, ast_block)
         }));
 
-        let return_block = builder.return_block();
+        let return_block = builder.return_block(vec![block]);
         builder.cfg.terminate(block, call_site_scope_id, span,
                               TerminatorKind::Goto { target: return_block });
         builder.cfg.terminate(return_block, call_site_scope_id, span,
                               TerminatorKind::Return);
         return_block.and(arg_decls)
     }));
-    assert_eq!(block, builder.return_block());
+    assert_eq!(block, builder.return_block(vec![]));
 
     match tcx.node_id_to_type(fn_id).sty {
         ty::TyFnDef(_, _, f) if f.abi == Abi::RustCall => {
@@ -245,7 +246,7 @@ pub fn construct_const<'a, 'gcx, 'tcx>(hir: Cx<'a, 'gcx, 'tcx>,
         let expr = builder.hir.mirror(ast_expr);
         unpack!(block = builder.into(&Lvalue::ReturnPointer, block, expr));
 
-        let return_block = builder.return_block();
+        let return_block = builder.return_block(vec![block]);
         builder.cfg.terminate(block, call_site_scope_id, span,
                               TerminatorKind::Goto { target: return_block });
         builder.cfg.terminate(return_block, call_site_scope_id, span,
@@ -262,7 +263,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     fn new(hir: Cx<'a, 'gcx, 'tcx>, span: Span) -> Builder<'a, 'gcx, 'tcx> {
         let mut builder = Builder {
             hir: hir,
-            cfg: CFG { basic_blocks: vec![] },
+            cfg: CFG { basic_blocks: vec![], edges: FnvHashSet() },
             fn_span: span,
             scopes: vec![],
             scope_datas: vec![],
@@ -276,7 +277,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             cached_return_block: None
         };
 
-        assert_eq!(builder.cfg.start_new_block(), START_BLOCK);
+        assert_eq!(builder.cfg.start_new_block(vec![]), START_BLOCK);
 
         builder
     }
@@ -368,11 +369,11 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn return_block(&mut self) -> BasicBlock {
+    fn return_block(&mut self, predecessors: Vec<BasicBlock>) -> BasicBlock {
         match self.cached_return_block {
             Some(rb) => rb,
             None => {
-                let rb = self.cfg.start_new_block();
+                let rb = self.cfg.start_new_block(predecessors);
                 self.cached_return_block = Some(rb);
                 rb
             }

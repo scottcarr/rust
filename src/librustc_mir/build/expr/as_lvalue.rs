@@ -66,7 +66,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                                            idx.clone(),
                                                            Operand::Consume(len.clone())));
 
-                let (success, failure) = (this.cfg.start_new_block(), this.cfg.start_new_block());
+                let (success, failure) = (this.cfg.start_new_block(vec![block]), this.cfg.start_new_block(vec![block]));
                 this.cfg.terminate(block,
                                    scope_id,
                                    expr_span,

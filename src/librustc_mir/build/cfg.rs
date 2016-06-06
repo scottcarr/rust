@@ -26,14 +26,22 @@ impl<'tcx> CFG<'tcx> {
         &mut self.basic_blocks[blk.index()]
     }
 
-    pub fn start_new_block(&mut self) -> BasicBlock {
+    //pub fn start_new_block(&mut self) -> BasicBlock {
+    //    let node_index = self.basic_blocks.len();
+    //    self.basic_blocks.push(BasicBlockData::new(None));
+    //    BasicBlock::new(node_index)
+    //}
+
+    pub fn start_new_block(&mut self, predecessors: Vec<BasicBlock>) -> BasicBlock {
         let node_index = self.basic_blocks.len();
         self.basic_blocks.push(BasicBlockData::new(None));
-        BasicBlock::new(node_index)
+        let new_bb = BasicBlock::new(node_index);
+        predecessors.into_iter().map(|pred| self.edges.insert((pred, new_bb)));
+        new_bb
     }
 
-    pub fn start_new_cleanup_block(&mut self) -> BasicBlock {
-        let bb = self.start_new_block();
+    pub fn start_new_cleanup_block(&mut self, predecessors: Vec<BasicBlock>) -> BasicBlock {
+        let bb = self.start_new_block(predecessors);
         self.block_data_mut(bb).is_cleanup = true;
         bb
     }

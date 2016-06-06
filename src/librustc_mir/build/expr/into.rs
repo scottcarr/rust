@@ -48,8 +48,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             ExprKind::If { condition: cond_expr, then: then_expr, otherwise: else_expr } => {
                 let operand = unpack!(block = this.as_operand(block, cond_expr));
 
-                let mut then_block = this.cfg.start_new_block();
-                let mut else_block = this.cfg.start_new_block();
+                let mut then_block = this.cfg.start_new_block(vec![block]);
+                let mut else_block = this.cfg.start_new_block(vec![block]);
                 this.cfg.terminate(block, scope_id, expr_span, TerminatorKind::If {
                     cond: operand,
                     targets: (then_block, else_block)
@@ -66,7 +66,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                     else_block
                 };
 
-                let join_block = this.cfg.start_new_block();
+                let join_block = this.cfg.start_new_block(vec![then_block, else_block]);
                 this.cfg.terminate(then_block,
                                    scope_id,
                                    expr_span,
@@ -91,9 +91,15 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 //        |                          | (false)
                 //        +----------true------------+-------------------> [false_block]
 
-                let (true_block, false_block, mut else_block, join_block) =
-                    (this.cfg.start_new_block(), this.cfg.start_new_block(),
-                     this.cfg.start_new_block(), this.cfg.start_new_block());
+                // SCOTT I do not understand this CFG
+                //let (true_block, false_block, mut else_block, join_block) =
+                //    (this.cfg.start_new_block(), this.cfg.start_new_block(),
+                //     this.cfg.start_new_block(), this.cfg.start_new_block());
+                
+                let mut else_block = this.cfg.start_new_block(vec![block]);
+                let false_block = this.cfg.start_new_block(vec![block]);
+                let true_block = this.cfg.start_new_block(vec![block, else_block]);
+                let join_block = this.cfg.start_new_block(vec![true_block, false_block]);
 
                 let lhs = unpack!(block = this.as_operand(block, lhs));
                 let blocks = match op {
@@ -154,8 +160,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 //                         +--------------------------+
                 //
 
-                let loop_block = this.cfg.start_new_block();
-                let exit_block = this.cfg.start_new_block();
+                let loop_block = this.cfg.start_new_block(vec![block]);
+                let exit_block = this.cfg.start_new_block(vec![loop_block]);
 
                 // start the loop
                 this.cfg.terminate(block,

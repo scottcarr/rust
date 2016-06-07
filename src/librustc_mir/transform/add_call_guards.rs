@@ -16,8 +16,6 @@ use rustc_data_structures::indexed_vec::{Idx, IdxVec};
 
 use pretty;
 
-use traversal;
-
 pub struct AddCallGuards;
 
 /**
@@ -42,16 +40,8 @@ pub struct AddCallGuards;
 
 impl<'tcx> MirPass<'tcx> for AddCallGuards {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
-        let mut pred_count = IdxVec::from_elem(0u32, mir.basic_blocks());
-
-        // Build the precedecessor map for the MIR
-        for (_, data) in traversal::preorder(mir) {
-            if let Some(ref term) = data.terminator {
-                for &tgt in term.successors().iter() {
-                    pred_count[tgt] += 1;
-                }
-            }
-        }
+        let pred_count: IdxVec<_, _> =
+            mir.predecessors().iter().map(|ps| ps.len()).collect();
 
         // We need a place to store the new blocks generated
         let mut new_blocks = Vec::new();

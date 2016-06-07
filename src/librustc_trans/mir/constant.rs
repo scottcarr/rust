@@ -280,7 +280,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
         let mut failure = Ok(());
 
         loop {
-            let data = self.mir.basic_block_data(bb);
+            let data = &self.mir[bb];
             for statement in &data.statements {
                 match statement.kind {
                     mir::StatementKind::Assign(ref dest, ref rvalue) => {

@@ -139,7 +139,7 @@ struct DropData<'tcx> {
     span: Span,
 
     /// lvalue to drop
-    value: Lvalue<'tcx>,
+    location: Lvalue<'tcx>,
 
     /// The cached block for the cleanups-on-diverge path. This block
     /// contains code to run the current drop and all the preceding
@@ -402,7 +402,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 // the drop that comes before it in the vector.
                 scope.drops.push(DropData {
                     span: span,
-                    value: lvalue.clone(),
+                    location: lvalue.clone(),
                     cached_block: None
                 });
                 return;
@@ -497,7 +497,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn build_drop(&mut self,
                       block: BasicBlock,
                       span: Span,
-                      value: Lvalue<'tcx>,
+                      location: Lvalue<'tcx>,
                       ty: Ty<'tcx>) -> BlockAnd<()> {
         if !self.hir.needs_drop(ty) {
             return block.unit();
@@ -509,7 +509,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                            scope_id,
                            span,
                            TerminatorKind::Drop {
-                               value: value,
+                               location: location,
                                target: next_target,
                                unwind: diverge_target,
                            });
@@ -517,48 +517,28 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     }
 
 
-    // Panicking
-    // =========
-    // FIXME: should be moved into their own module
-    pub fn panic_bounds_check(&mut self,
-                              block: BasicBlock,
-                              index: Operand<'tcx>,
-                              len: Operand<'tcx>,
-                              span: Span) {
-        // fn(&(filename: &'static str, line: u32), index: usize, length: usize) -> !
-        let region = ty::ReStatic; // FIXME(mir-borrowck): use a better region?
-        let func = self.lang_function(lang_items::PanicBoundsCheckFnLangItem);
-        let args = self.hir.tcx().replace_late_bound_regions(&func.ty.fn_args(), |_| region).0;
-
-        let ref_ty = args[0];
-        let tup_ty = if let ty::TyRef(_, tyandmut) = ref_ty.sty {
-            tyandmut.ty
-        } else {
-            span_bug!(span, "unexpected panic_bound_check type: {:?}", func.ty);
-        };
-
-        let (tuple, tuple_ref) = (self.temp(tup_ty), self.temp(ref_ty));
-        let (file, line) = self.span_to_fileline_args(span);
-        let elems = vec![Operand::Constant(file), Operand::Constant(line)];
+    pub fn build_drop_and_replace(&mut self,
+                                  block: BasicBlock,
+                                  span: Span,
+                                  location: Lvalue<'tcx>,
+                                  value: Operand<'tcx>) -> BlockAnd<()> {
         let scope_id = self.innermost_scope_id();
-        // FIXME: We should have this as a constant, rather than a stack variable (to not pollute
-        // icache with cold branch code), however to achieve that we either have to rely on rvalue
-        // promotion or have some way, in MIR, to create constants.
-        self.cfg.push_assign(block, scope_id, span, &tuple, // tuple = (file_arg, line_arg);
-                             Rvalue::Aggregate(AggregateKind::Tuple, elems));
-        // FIXME: is this region really correct here?
-        self.cfg.push_assign(block, scope_id, span, &tuple_ref, // tuple_ref = &tuple;
-                             Rvalue::Ref(region, BorrowKind::Shared, tuple));
-        let cleanup = self.diverge_cleanup();
-        self.cfg.terminate(block, scope_id, span, TerminatorKind::Call {
-            func: Operand::Constant(func),
-            args: vec![Operand::Consume(tuple_ref), index, len],
-            destination: None,
-            cleanup: cleanup,
-        });
+        let next_target = self.cfg.start_new_block();
+        let diverge_target = self.diverge_cleanup();
+        self.cfg.terminate(block,
+                           scope_id,
+                           span,
+                           TerminatorKind::DropAndReplace {
+                               location: location,
+                               value: value,
+                               target: next_target,
+                               unwind: diverge_target,
+                           });
+        next_target.unit()
     }
 
     /// Create diverge cleanup and branch to it from `block`.
+    // FIXME: Remove this (used only for unreachable cases in match).
     pub fn panic(&mut self, block: BasicBlock, msg: &'static str, span: Span) {
         // fn(&(msg: &'static str filename: &'static str, line: u32)) -> !
         let region = ty::ReStatic; // FIXME(mir-borrowck): use a better region?
@@ -599,6 +579,32 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             cleanup: cleanup,
             destination: None,
         });
+    }
+
+    /// Create an Assert terminator and return the success block.
+    /// If the boolean condition operand is not the expected value,
+    /// a runtime panic will be caused with the given message.
+    pub fn assert(&mut self, block: BasicBlock,
+                  cond: Operand<'tcx>,
+                  expected: bool,
+                  msg: AssertMessage<'tcx>,
+                  span: Span)
+                  -> BasicBlock {
+        let scope_id = self.innermost_scope_id();
+
+        let success_block = self.cfg.start_new_block();
+        let cleanup = self.diverge_cleanup();
+
+        self.cfg.terminate(block, scope_id, span,
+                           TerminatorKind::Assert {
+                               cond: cond,
+                               expected: expected,
+                               msg: msg,
+                               target: success_block,
+                               cleanup: cleanup
+                           });
+
+        success_block
     }
 
     fn lang_function(&mut self, lang_item: lang_items::LangItem) -> Constant<'tcx> {
@@ -653,7 +659,7 @@ fn build_scope_drops<'tcx>(cfg: &mut CFG<'tcx>,
         });
         let next = cfg.start_new_block();
         cfg.terminate(block, scope.id, drop_data.span, TerminatorKind::Drop {
-            value: drop_data.value.clone(),
+            location: drop_data.location.clone(),
             target: next,
             unwind: on_diverge
         });
@@ -709,7 +715,7 @@ fn build_diverge_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                           scope.id,
                           drop_data.span,
                           TerminatorKind::Drop {
-                              value: drop_data.value.clone(),
+                              location: drop_data.location.clone(),
                               target: target,
                               unwind: None
                           });

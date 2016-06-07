@@ -731,7 +731,7 @@ fn bind_subslice_pat(bcx: Block,
     let slice_begin = InBoundsGEP(bcx, base, &[C_uint(bcx.ccx(), offset_left)]);
     let slice_len_offset = C_uint(bcx.ccx(), offset_left + offset_right);
     let slice_len = Sub(bcx, len, slice_len_offset, DebugLoc::None);
-    let slice_ty = bcx.tcx().mk_imm_ref(bcx.tcx().mk_region(ty::ReStatic),
+    let slice_ty = bcx.tcx().mk_imm_ref(bcx.tcx().mk_region(ty::ReErased),
                                          bcx.tcx().mk_slice(unit_ty));
     let scratch = rvalue_scratch_datum(bcx, slice_ty, "");
     Store(bcx, slice_begin, expr::get_dataptr(bcx, scratch.val));
@@ -880,7 +880,7 @@ fn compare_values<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                                rhs_t: Ty<'tcx>,
                                debug_loc: DebugLoc)
                                -> Result<'blk, 'tcx> {
-        let did = langcall(bcx,
+        let did = langcall(bcx.tcx(),
                            None,
                            &format!("comparison of `{}`", rhs_t),
                            StrEqFnLangItem);

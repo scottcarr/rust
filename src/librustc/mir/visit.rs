@@ -127,6 +127,11 @@ macro_rules! make_mir_visitor {
                 self.super_terminator_kind(block, kind);
             }
 
+            fn visit_assert_message(&mut self,
+                                    msg: & $($mutability)* AssertMessage<'tcx>) {
+                self.super_assert_message(msg);
+            }
+
             fn visit_rvalue(&mut self,
                             rvalue: & $($mutability)* Rvalue<'tcx>) {
                 self.super_rvalue(rvalue);
@@ -394,10 +399,20 @@ macro_rules! make_mir_visitor {
                     TerminatorKind::Return => {
                     }
 
-                    TerminatorKind::Drop { ref $($mutability)* value,
+                    TerminatorKind::Drop { ref $($mutability)* location,
                                            target,
                                            unwind } => {
-                        self.visit_lvalue(value, LvalueContext::Drop);
+                        self.visit_lvalue(location, LvalueContext::Drop);
+                        self.visit_branch(block, target);
+                        unwind.map(|t| self.visit_branch(block, t));
+                    }
+
+                    TerminatorKind::DropAndReplace { ref $($mutability)* location,
+                                                     ref $($mutability)* value,
+                                                     target,
+                                                     unwind } => {
+                        self.visit_lvalue(location, LvalueContext::Drop);
+                        self.visit_operand(value);
                         self.visit_branch(block, target);
                         unwind.map(|t| self.visit_branch(block, t));
                     }
@@ -416,6 +431,31 @@ macro_rules! make_mir_visitor {
                         }
                         cleanup.map(|t| self.visit_branch(block, t));
                     }
+
+                    TerminatorKind::Assert { ref $($mutability)* cond,
+                                             expected: _,
+                                             ref $($mutability)* msg,
+                                             target,
+                                             cleanup } => {
+                        self.visit_operand(cond);
+                        self.visit_assert_message(msg);
+                        self.visit_branch(block, target);
+                        cleanup.map(|t| self.visit_branch(block, t));
+                    }
+                }
+            }
+
+            fn super_assert_message(&mut self,
+                                    msg: & $($mutability)* AssertMessage<'tcx>) {
+                match *msg {
+                    AssertMessage::BoundsCheck {
+                        ref $($mutability)* len,
+                        ref $($mutability)* index
+                    } => {
+                        self.visit_operand(len);
+                        self.visit_operand(index);
+                    }
+                    AssertMessage::Math(_) => {}
                 }
             }
 
@@ -451,6 +491,9 @@ macro_rules! make_mir_visitor {
                     }
 
                     Rvalue::BinaryOp(_bin_op,
+                                     ref $($mutability)* lhs,
+                                     ref $($mutability)* rhs) |
+                    Rvalue::CheckedBinaryOp(_bin_op,
                                      ref $($mutability)* lhs,
                                      ref $($mutability)* rhs) => {
                         self.visit_operand(lhs);

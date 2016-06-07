@@ -1033,7 +1033,7 @@ macro_rules! int_impl {
         /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
-        #[rustc_no_mir] // FIXME #29769 MIR overflow checking is TBD.
+        #[rustc_inherit_overflow_checks]
         pub fn pow(self, mut exp: u32) -> Self {
             let mut base = self;
             let mut acc = Self::one();
@@ -1075,7 +1075,7 @@ macro_rules! int_impl {
         /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
-        #[rustc_no_mir] // FIXME #29769 MIR overflow checking is TBD.
+        #[rustc_inherit_overflow_checks]
         pub fn abs(self) -> Self {
             if self.is_negative() {
                 // Note that the #[inline] above means that the overflow
@@ -1171,6 +1171,15 @@ impl i32 {
 #[lang = "i64"]
 impl i64 {
     int_impl! { i64, u64, 64,
+        intrinsics::add_with_overflow,
+        intrinsics::sub_with_overflow,
+        intrinsics::mul_with_overflow }
+}
+
+#[cfg(target_pointer_width = "16")]
+#[lang = "isize"]
+impl isize {
+    int_impl! { i16, u16, 16,
         intrinsics::add_with_overflow,
         intrinsics::sub_with_overflow,
         intrinsics::mul_with_overflow }
@@ -2052,7 +2061,7 @@ macro_rules! uint_impl {
         /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
-        #[rustc_no_mir] // FIXME #29769 MIR overflow checking is TBD.
+        #[rustc_inherit_overflow_checks]
         pub fn pow(self, mut exp: u32) -> Self {
             let mut base = self;
             let mut acc = Self::one();
@@ -2188,6 +2197,18 @@ impl u64 {
         intrinsics::mul_with_overflow }
 }
 
+#[cfg(target_pointer_width = "16")]
+#[lang = "usize"]
+impl usize {
+    uint_impl! { u16, 16,
+        intrinsics::ctpop,
+        intrinsics::ctlz,
+        intrinsics::cttz,
+        intrinsics::bswap,
+        intrinsics::add_with_overflow,
+        intrinsics::sub_with_overflow,
+        intrinsics::mul_with_overflow }
+}
 #[cfg(target_pointer_width = "32")]
 #[lang = "usize"]
 impl usize {

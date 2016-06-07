@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![deny(warnings)]
+#![feature(rustc_attrs)]
 
-fn main() {
-    // Remove this whenever snapshots and rustbuild nightlies are synced.
-    println!("cargo:rustc-cfg=cargobuild");
-    println!("cargo:rerun-if-changed=build.rs")
+macro_rules! m {
+    () => { #[cfg(any())] fn f() {} }
 }
+
+trait T {}
+impl T for () { m!(); }
+
+#[rustc_error]
+fn main() {} //~ ERROR compilation successful

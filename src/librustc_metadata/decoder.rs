@@ -285,12 +285,17 @@ fn item_trait_ref<'a, 'tcx>(doc: rbml::Doc, tcx: TyCtxt<'a, 'tcx, 'tcx>, cdata: 
 }
 
 fn item_name(intr: &IdentInterner, item: rbml::Doc) -> ast::Name {
-    let name = reader::get_doc(item, tag_paths_data_name);
-    let string = name.as_str_slice();
-    match intr.find(string) {
-        None => token::intern(string),
-        Some(val) => val,
-    }
+    maybe_item_name(intr, item).expect("no item in item_name")
+}
+
+fn maybe_item_name(intr: &IdentInterner, item: rbml::Doc) -> Option<ast::Name> {
+    reader::maybe_get_doc(item, tag_paths_data_name).map(|name| {
+        let string = name.as_str_slice();
+        match intr.find(string) {
+            None => token::intern(string),
+            Some(val) => val,
+        }
+    })
 }
 
 fn family_to_variant_kind<'tcx>(family: Family) -> Option<ty::VariantKind> {
@@ -790,6 +795,11 @@ pub fn each_top_level_item_of_crate<F, G>(intr: Rc<IdentInterner>,
 
 pub fn get_item_name(intr: &IdentInterner, cdata: Cmd, id: DefIndex) -> ast::Name {
     item_name(intr, cdata.lookup_item(id))
+}
+
+pub fn maybe_get_item_name(intr: &IdentInterner, cdata: Cmd, id: DefIndex)
+                         -> Option<ast::Name> {
+    maybe_item_name(intr, cdata.lookup_item(id))
 }
 
 pub fn maybe_get_item_ast<'a, 'tcx>(cdata: Cmd, tcx: TyCtxt<'a, 'tcx, 'tcx>, id: DefIndex)
@@ -1662,31 +1672,12 @@ fn doc_generics<'a, 'tcx>(base_doc: rbml::Doc,
     }
 
     let mut regions = subst::VecPerParamSpace::empty();
-    for rp_doc in reader::tagged_docs(doc, tag_region_param_def) {
-        let ident_str_doc = reader::get_doc(rp_doc,
-                                            tag_region_param_def_ident);
-        let name = item_name(&token::get_ident_interner(), ident_str_doc);
-        let def_id_doc = reader::get_doc(rp_doc,
-                                         tag_region_param_def_def_id);
-        let def_id = translated_def_id(cdata, def_id_doc);
-
-        let doc = reader::get_doc(rp_doc, tag_region_param_def_space);
-        let space = subst::ParamSpace::from_uint(reader::doc_as_u64(doc) as usize);
-
-        let doc = reader::get_doc(rp_doc, tag_region_param_def_index);
-        let index = reader::doc_as_u64(doc) as u32;
-
-        let bounds = reader::tagged_docs(rp_doc, tag_items_data_region).map(|p| {
+    for p in reader::tagged_docs(doc, tag_region_param_def) {
+        let bd =
             TyDecoder::with_doc(tcx, cdata.cnum, p,
                                 &mut |did| translate_def_id(cdata, did))
-            .parse_region()
-        }).collect();
-
-        regions.push(space, ty::RegionParameterDef { name: name,
-                                                     def_id: def_id,
-                                                     space: space,
-                                                     index: index,
-                                                     bounds: bounds });
+            .parse_region_param_def();
+        regions.push(bd.space, bd);
     }
 
     ty::Generics { types: types, regions: regions }

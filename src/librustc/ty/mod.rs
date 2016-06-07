@@ -60,6 +60,7 @@ pub use self::sty::{ClosureTy, InferTy, ParamTy, ProjectionTy, TraitTy};
 pub use self::sty::{ClosureSubsts, TypeAndMut};
 pub use self::sty::{TraitRef, TypeVariants, PolyTraitRef};
 pub use self::sty::{BoundRegion, EarlyBoundRegion, FreeRegion, Region};
+pub use self::sty::Issue32330;
 pub use self::sty::{TyVid, IntVid, FloatVid, RegionVid, SkolemizedRegionVid};
 pub use self::sty::BoundRegion::*;
 pub use self::sty::FnOutput::*;
@@ -514,19 +515,20 @@ bitflags! {
         const HAS_SELF           = 1 << 1,
         const HAS_TY_INFER       = 1 << 2,
         const HAS_RE_INFER       = 1 << 3,
-        const HAS_RE_EARLY_BOUND = 1 << 4,
-        const HAS_FREE_REGIONS   = 1 << 5,
-        const HAS_TY_ERR         = 1 << 6,
-        const HAS_PROJECTION     = 1 << 7,
-        const HAS_TY_CLOSURE     = 1 << 8,
+        const HAS_RE_SKOL        = 1 << 4,
+        const HAS_RE_EARLY_BOUND = 1 << 5,
+        const HAS_FREE_REGIONS   = 1 << 6,
+        const HAS_TY_ERR         = 1 << 7,
+        const HAS_PROJECTION     = 1 << 8,
+        const HAS_TY_CLOSURE     = 1 << 9,
 
         // true if there are "names" of types and regions and so forth
         // that are local to a particular fn
-        const HAS_LOCAL_NAMES   = 1 << 9,
+        const HAS_LOCAL_NAMES    = 1 << 10,
 
         // Present if the type belongs in a local type context.
         // Only set for TyInfer other than Fresh.
-        const KEEP_IN_LOCAL_TCX = 1 << 10,
+        const KEEP_IN_LOCAL_TCX  = 1 << 11,
 
         const NEEDS_SUBST        = TypeFlags::HAS_PARAMS.bits |
                                    TypeFlags::HAS_SELF.bits |
@@ -739,7 +741,8 @@ impl RegionParameterDef {
         })
     }
     pub fn to_bound_region(&self) -> ty::BoundRegion {
-        ty::BoundRegion::BrNamed(self.def_id, self.name)
+        // this is an early bound region, so unaffected by #32330
+        ty::BoundRegion::BrNamed(self.def_id, self.name, Issue32330::WontChange)
     }
 }
 
@@ -946,7 +949,28 @@ impl<'tcx> TraitPredicate<'tcx> {
 
     /// Creates the dep-node for selecting/evaluating this trait reference.
     fn dep_node(&self) -> DepNode<DefId> {
-        DepNode::TraitSelect(self.def_id())
+        // Ideally, the dep-node would just have all the input types
+        // in it.  But they are limited to including def-ids. So as an
+        // approximation we include the def-ids for all nominal types
+        // found somewhere. This means that we will e.g. conflate the
+        // dep-nodes for `u32: SomeTrait` and `u64: SomeTrait`, but we
+        // would have distinct dep-nodes for `Vec<u32>: SomeTrait`,
+        // `Rc<u32>: SomeTrait`, and `(Vec<u32>, Rc<u32>): SomeTrait`.
+        // Note that it's always sound to conflate dep-nodes, it just
+        // leads to more recompilation.
+        let def_ids: Vec<_> =
+            self.input_types()
+                .iter()
+                .flat_map(|t| t.walk())
+                .filter_map(|t| match t.sty {
+                    ty::TyStruct(adt_def, _) |
+                    ty::TyEnum(adt_def, _) =>
+                        Some(adt_def.did),
+                    _ =>
+                        None
+                })
+                .collect();
+        DepNode::TraitSelect(self.def_id(), def_ids)
     }
 
     pub fn input_types(&self) -> &[Ty<'tcx>] {
@@ -992,7 +1016,7 @@ pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::R
 /// equality between arbitrary types. Processing an instance of Form
 /// #2 eventually yields one of these `ProjectionPredicate`
 /// instances to normalize the LHS.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ProjectionPredicate<'tcx> {
     pub projection_ty: ProjectionTy<'tcx>,
     pub ty: Ty<'tcx>,
@@ -1768,9 +1792,8 @@ impl<'a, 'tcx> AdtDefData<'tcx, 'tcx> {
                                         stack: &mut Vec<AdtDefMaster<'tcx>>)
     {
 
-        let dep_node = DepNode::SizedConstraint(self.did);
-
-        if self.sized_constraint.get(dep_node).is_some() {
+        let dep_node = || DepNode::SizedConstraint(self.did);
+        if self.sized_constraint.get(dep_node()).is_some() {
             return;
         }
 
@@ -1780,7 +1803,7 @@ impl<'a, 'tcx> AdtDefData<'tcx, 'tcx> {
             //
             // Consider the type as Sized in the meanwhile to avoid
             // further errors.
-            self.sized_constraint.fulfill(dep_node, tcx.types.err);
+            self.sized_constraint.fulfill(dep_node(), tcx.types.err);
             return;
         }
 
@@ -1803,14 +1826,14 @@ impl<'a, 'tcx> AdtDefData<'tcx, 'tcx> {
             _ => tcx.mk_tup(tys)
         };
 
-        match self.sized_constraint.get(dep_node) {
+        match self.sized_constraint.get(dep_node()) {
             Some(old_ty) => {
                 debug!("calculate_sized_constraint: {:?} recurred", self);
                 assert_eq!(old_ty, tcx.types.err)
             }
             None => {
                 debug!("calculate_sized_constraint: {:?} => {:?}", self, ty);
-                self.sized_constraint.fulfill(dep_node, ty)
+                self.sized_constraint.fulfill(dep_node(), ty)
             }
         }
     }
@@ -2480,6 +2503,18 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             || self.sess.cstore.item_type(self.global_tcx(), did))
     }
 
+    pub fn opt_lookup_item_type(self, did: DefId) -> Option<TypeScheme<'gcx>> {
+        if let Some(scheme) = self.tcache.borrow_mut().get(&did) {
+            return Some(scheme.clone());
+        }
+
+        if did.krate == LOCAL_CRATE {
+            None
+        } else {
+            Some(self.sess.cstore.item_type(self.global_tcx(), did))
+        }
+    }
+
     /// Given the did of a trait, returns its canonical trait ref.
     pub fn lookup_trait_def(self, did: DefId) -> &'gcx TraitDef<'gcx> {
         lookup_locally_or_in_crate_store(
@@ -2835,7 +2870,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         for def in generics.regions.as_slice() {
             let region =
                 ReFree(FreeRegion { scope: free_id_outlive,
-                                    bound_region: BrNamed(def.def_id, def.name) });
+                                    bound_region: def.to_bound_region() });
             debug!("push_region_params {:?}", region);
             regions.push(def.space, region);
         }

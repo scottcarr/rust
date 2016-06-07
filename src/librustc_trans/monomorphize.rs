@@ -173,14 +173,14 @@ pub struct Instance<'tcx> {
 impl<'tcx> fmt::Display for Instance<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         ppaux::parameterized(f, &self.substs, self.def, ppaux::Ns::Value, &[],
-                             |tcx| tcx.lookup_item_type(self.def).generics)
+                             |tcx| Some(tcx.lookup_item_type(self.def).generics))
     }
 }
 
 impl<'tcx> Instance<'tcx> {
     pub fn new(def_id: DefId, substs: &'tcx Substs<'tcx>)
                -> Instance<'tcx> {
-        assert!(substs.regions.iter().all(|&r| r == ty::ReStatic));
+        assert!(substs.regions.iter().all(|&r| r == ty::ReErased));
         Instance { def: def_id, substs: substs }
     }
     pub fn mono<'a>(scx: &SharedCrateContext<'a, 'tcx>, def_id: DefId) -> Instance<'tcx> {

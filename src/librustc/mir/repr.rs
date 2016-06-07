@@ -11,6 +11,7 @@
 use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
+use rustc_data_structures::indexed_vec::{IdxVec, Idx};
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -25,37 +26,61 @@ use std::ops::{Index, IndexMut};
 use syntax::ast::{self, Name};
 use syntax::codemap::Span;
 
+macro_rules! newtype_index {
+    ($name:ident, $debug_name:expr) => (
+        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+         RustcEncodable, RustcDecodable)]
+        pub struct $name(u32);
+
+        impl Idx for $name {
+            fn new(value: usize) -> Self {
+                assert!(value < (u32::MAX) as usize);
+                $name(value as u32)
+            }
+            fn index(self) -> usize {
+                self.0 as usize
+            }
+        }
+
+        impl Debug for $name {
+            fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+                write!(fmt, "{}{}", $debug_name, self.0)
+            }
+        }
+    )
+}
+
 /// Lowered representation of a single function.
 #[derive(Clone, RustcEncodable, RustcDecodable)]
 pub struct Mir<'tcx> {
     /// List of basic blocks. References to basic block use a newtyped index type `BasicBlock`
     /// that indexes into this vector.
-    pub basic_blocks: Vec<BasicBlockData<'tcx>>,
+    pub basic_blocks: IdxVec<BasicBlock, BasicBlockData<'tcx>>,
 
     /// List of lexical scopes; these are referenced by statements and
     /// used (eventually) for debuginfo. Indexed by a `ScopeId`.
-    pub scopes: Vec<ScopeData>,
+    pub scopes: IdxVec<ScopeId, ScopeData>,
 
     /// Rvalues promoted from this function, such as borrows of constants.
     /// Each of them is the Mir of a constant with the fn's type parameters
     /// in scope, but no vars or args and a separate set of temps.
-    pub promoted: Vec<Mir<'tcx>>,
+    pub promoted: IdxVec<Promoted, Mir<'tcx>>,
 
     /// Return type of the function.
     pub return_ty: FnOutput<'tcx>,
 
     /// Variables: these are stack slots corresponding to user variables. They may be
     /// assigned many times.
-    pub var_decls: Vec<VarDecl<'tcx>>,
+    pub var_decls: IdxVec<Var, VarDecl<'tcx>>,
 
     /// Args: these are stack slots corresponding to the input arguments.
-    pub arg_decls: Vec<ArgDecl<'tcx>>,
+    pub arg_decls: IdxVec<Arg, ArgDecl<'tcx>>,
 
     /// Temp declarations: stack slots that for temporaries created by
     /// the compiler. These are assigned once, but they are not SSA
     /// values in that it is possible to borrow them and mutate them
     /// through the resulting reference.
-    pub temp_decls: Vec<TempDecl<'tcx>>,
+    pub temp_decls: IdxVec<Temp, TempDecl<'tcx>>,
 
     /// Names and capture modes of all the closure upvars, assuming
     /// the first argument is either the closure or a reference to it.
@@ -76,11 +101,11 @@ impl<'tcx> Mir<'tcx> {
     }
 
     pub fn basic_block_data(&self, bb: BasicBlock) -> &BasicBlockData<'tcx> {
-        &self.basic_blocks[bb.index()]
+        &self.basic_blocks[bb]
     }
 
     pub fn basic_block_data_mut(&mut self, bb: BasicBlock) -> &mut BasicBlockData<'tcx> {
-        &mut self.basic_blocks[bb.index()]
+        &mut self.basic_blocks[bb]
     }
 }
 
@@ -222,31 +247,7 @@ pub struct UpvarDecl {
 ///////////////////////////////////////////////////////////////////////////
 // BasicBlock
 
-/// The index of a particular basic block. The index is into the `basic_blocks`
-/// list of the `Mir`.
-///
-/// (We use a `u32` internally just to save memory.)
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
-         RustcEncodable, RustcDecodable)]
-pub struct BasicBlock(u32);
-
-impl BasicBlock {
-    pub fn new(index: usize) -> BasicBlock {
-        assert!(index < (u32::MAX as usize));
-        BasicBlock(index as u32)
-    }
-
-    /// Extract the index.
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl Debug for BasicBlock {
-    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
-        write!(fmt, "bb{}", self.0)
-    }
-}
+newtype_index!(BasicBlock, "bb");
 
 ///////////////////////////////////////////////////////////////////////////
 // BasicBlockData and Terminator
@@ -609,19 +610,23 @@ impl<'tcx> Debug for Statement<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Lvalues
 
+newtype_index!(Var, "var");
+newtype_index!(Temp, "tmp");
+newtype_index!(Arg, "arg");
+
 /// A path to a value; something that can be evaluated without
 /// changing or disturbing program state.
 #[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum Lvalue<'tcx> {
     /// local variable declared by the user
-    Var(u32),
+    Var(Var),
 
     /// temporary introduced during lowering into MIR
-    Temp(u32),
+    Temp(Temp),
 
     /// formal parameter of the function; note that these are NOT the
     /// bindings that the user declares, which are vars
-    Arg(u32),
+    Arg(Arg),
 
     /// static or static mut variable
     Static(DefId),
@@ -681,20 +686,7 @@ pub type LvalueProjection<'tcx> = Projection<'tcx, Lvalue<'tcx>, Operand<'tcx>>;
 /// and the index is an operand.
 pub type LvalueElem<'tcx> = ProjectionElem<'tcx, Operand<'tcx>>;
 
-/// Index into the list of fields found in a `VariantDef`
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
-pub struct Field(u32);
-
-impl Field {
-    pub fn new(value: usize) -> Field {
-        assert!(value < (u32::MAX) as usize);
-        Field(value as u32)
-    }
-
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
+newtype_index!(Field, "field");
 
 impl<'tcx> Lvalue<'tcx> {
     pub fn field(self, f: Field, ty: Ty<'tcx>) -> Lvalue<'tcx> {
@@ -722,12 +714,9 @@ impl<'tcx> Debug for Lvalue<'tcx> {
         use self::Lvalue::*;
 
         match *self {
-            Var(id) =>
-                write!(fmt, "var{:?}", id),
-            Arg(id) =>
-                write!(fmt, "arg{:?}", id),
-            Temp(id) =>
-                write!(fmt, "tmp{:?}", id),
+            Var(id) => write!(fmt, "{:?}", id),
+            Arg(id) => write!(fmt, "{:?}", id),
+            Temp(id) => write!(fmt, "{:?}", id),
             Static(def_id) =>
                 write!(fmt, "{}", ty::tls::with(|tcx| tcx.item_path_str(def_id))),
             ReturnPointer =>
@@ -754,35 +743,8 @@ impl<'tcx> Debug for Lvalue<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Scopes
 
-impl Index<ScopeId> for Vec<ScopeData> {
-    type Output = ScopeData;
-
-    #[inline]
-    fn index(&self, index: ScopeId) -> &ScopeData {
-        &self[index.index()]
-    }
-}
-
-impl IndexMut<ScopeId> for Vec<ScopeData> {
-    #[inline]
-    fn index_mut(&mut self, index: ScopeId) -> &mut ScopeData {
-        &mut self[index.index()]
-    }
-}
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, RustcEncodable, RustcDecodable)]
-pub struct ScopeId(u32);
-
-impl ScopeId {
-    pub fn new(index: usize) -> ScopeId {
-        assert!(index < (u32::MAX as usize));
-        ScopeId(index as u32)
-    }
-
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
+newtype_index!(ScopeId, "scope");
+pub const TOPMOST_SCOPE : ScopeId = ScopeId(0);
 
 #[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ScopeData {
@@ -1067,6 +1029,8 @@ impl<'tcx> Debug for TypedConstVal<'tcx> {
     }
 }
 
+newtype_index!(Promoted, "promoted");
+
 #[derive(Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub enum Literal<'tcx> {
     Item {
@@ -1078,7 +1042,7 @@ pub enum Literal<'tcx> {
     },
     Promoted {
         // Index into the `promoted` vector of `Mir`.
-        index: usize
+        index: Promoted
     },
 }
 
@@ -1102,7 +1066,7 @@ impl<'tcx> Debug for Literal<'tcx> {
                 fmt_const_val(fmt, value)
             }
             Promoted { index } => {
-                write!(fmt, "promoted{}", index)
+                write!(fmt, "{:?}", index)
             }
         }
     }

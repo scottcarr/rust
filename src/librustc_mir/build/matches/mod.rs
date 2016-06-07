@@ -16,6 +16,7 @@
 use build::{BlockAnd, BlockAndExtension, Builder};
 use rustc_data_structures::fnv::FnvHashMap;
 use rustc_data_structures::bitvec::BitVector;
+use rustc_data_structures::indexed_vec::Idx;
 use rustc::middle::const_val::ConstVal;
 use rustc::ty::{AdtDef, Ty};
 use rustc::mir::repr::*;
@@ -641,7 +642,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                        var_id: NodeId,
                        var_ty: Ty<'tcx>,
                        span: Span)
-                       -> u32
+                       -> Var
     {
         debug!("declare_binding(var_id={:?}, name={:?}, var_ty={:?}, var_scope_id={:?}, span={:?})",
                var_id, name, var_ty, var_scope_id, span);
@@ -654,7 +655,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             ty: var_ty.clone(),
             span: span,
         });
-        let index = index as u32;
+        let index = Var::new(index);
         let extent = self.scope_auxiliary[var_scope_id].extent;
         self.schedule_drop(span, extent, &Lvalue::Var(index), var_ty);
         self.var_indices.insert(var_id, index);

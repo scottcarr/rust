@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use rustc::mir::repr as mir;
+
 use common::{self, BlockAndBuilder};
 use debuginfo::DebugLoc;
 
@@ -22,7 +23,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                            -> BlockAndBuilder<'bcx, 'tcx> {
         debug!("trans_statement(statement={:?})", statement);
 
-        let debug_loc = DebugLoc::ScopeAt(self.scopes[statement.scope.index()],
+        let debug_loc = DebugLoc::ScopeAt(self.scopes[statement.scope],
                                           statement.span);
         debug_loc.apply_to_bcx(&bcx);
         debug_loc.apply(bcx.fcx());
@@ -30,8 +31,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             mir::StatementKind::Assign(ref lvalue, ref rvalue) => {
                 match *lvalue {
                     mir::Lvalue::Temp(index) => {
-                        let index = index as usize;
-                        match self.temps[index as usize] {
+                        match self.temps[index] {
                             TempRef::Lvalue(tr_dest) => {
                                 self.trans_rvalue(bcx, tr_dest, rvalue, debug_loc)
                             }

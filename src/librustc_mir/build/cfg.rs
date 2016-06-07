@@ -19,17 +19,15 @@ use syntax::codemap::Span;
 
 impl<'tcx> CFG<'tcx> {
     pub fn block_data(&self, blk: BasicBlock) -> &BasicBlockData<'tcx> {
-        &self.basic_blocks[blk.index()]
+        &self.basic_blocks[blk]
     }
 
     pub fn block_data_mut(&mut self, blk: BasicBlock) -> &mut BasicBlockData<'tcx> {
-        &mut self.basic_blocks[blk.index()]
+        &mut self.basic_blocks[blk]
     }
 
     pub fn start_new_block(&mut self) -> BasicBlock {
-        let node_index = self.basic_blocks.len();
-        self.basic_blocks.push(BasicBlockData::new(None));
-        BasicBlock::new(node_index)
+        self.basic_blocks.push(BasicBlockData::new(None))
     }
 
     pub fn start_new_cleanup_block(&mut self) -> BasicBlock {

@@ -14,6 +14,7 @@ use rustc::mir::repr::*;
 use rustc::mir::transform::MirSource;
 use rustc::ty::{self, TyCtxt};
 use rustc_data_structures::fnv::FnvHashMap;
+use rustc_data_structures::indexed_vec::{Idx};
 use std::fmt::Display;
 use std::fs;
 use std::io::{self, Write};
@@ -112,9 +113,7 @@ fn scope_entry_exit_annotations(auxiliary: Option<&ScopeAuxiliaryVec>)
     // compute scope/entry exit annotations
     let mut annotations = FnvHashMap();
     if let Some(auxiliary) = auxiliary {
-        for (index, auxiliary) in auxiliary.vec.iter().enumerate() {
-            let scope_id = ScopeId::new(index);
-
+        for (scope_id, auxiliary) in auxiliary.iter_enumerated() {
             annotations.entry(auxiliary.dom)
                        .or_insert(vec![])
                        .push(Annotation::EnterScope(scope_id));
@@ -143,10 +142,10 @@ pub fn write_mir_fn<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     // construct a scope tree and write it out
     let mut scope_tree: FnvHashMap<Option<ScopeId>, Vec<ScopeId>> = FnvHashMap();
-    for (index, scope_data) in mir.scopes.iter().enumerate() {
+    for (scope_id, scope_data) in mir.scopes.iter_enumerated() {
         scope_tree.entry(scope_data.parent_scope)
                   .or_insert(vec![])
-                  .push(ScopeId::new(index));
+                  .push(scope_id);
     }
 
     writeln!(w, "{}scope tree:", INDENT)?;
@@ -298,11 +297,11 @@ fn write_mir_sig(tcx: TyCtxt, src: MirSource, mir: &Mir, w: &mut Write)
         write!(w, "(")?;
 
         // fn argument types.
-        for (i, arg) in mir.arg_decls.iter().enumerate() {
-            if i > 0 {
+        for (i, arg) in mir.arg_decls.iter_enumerated() {
+            if i.index() != 0 {
                 write!(w, ", ")?;
             }
-            write!(w, "{:?}: {}", Lvalue::Arg(i as u32), arg.ty)?;
+            write!(w, "{:?}: {}", Lvalue::Arg(i), arg.ty)?;
         }
 
         write!(w, ") -> ")?;
@@ -322,7 +321,7 @@ fn write_mir_decls(tcx: TyCtxt, mir: &Mir, w: &mut Write)
                    -> io::Result<()>
 {
     // User variable types (including the user's name in a comment).
-    for (i, var) in mir.var_decls.iter().enumerate() {
+    for (i, var) in mir.var_decls.iter_enumerated() {
         let mut_str = if var.mutability == Mutability::Mut {
             "mut "
         } else {
@@ -332,7 +331,7 @@ fn write_mir_decls(tcx: TyCtxt, mir: &Mir, w: &mut Write)
         let indented_var = format!("{}let {}{:?}: {};",
                                    INDENT,
                                    mut_str,
-                                   Lvalue::Var(i as u32),
+                                   Lvalue::Var(i),
                                    var.ty);
         writeln!(w, "{0:1$} // \"{2}\" in {3}",
                  indented_var,
@@ -342,8 +341,8 @@ fn write_mir_decls(tcx: TyCtxt, mir: &Mir, w: &mut Write)
     }
 
     // Compiler-introduced temporary types.
-    for (i, temp) in mir.temp_decls.iter().enumerate() {
-        writeln!(w, "{}let mut {:?}: {};", INDENT, Lvalue::Temp(i as u32), temp.ty)?;
+    for (i, temp) in mir.temp_decls.iter_enumerated() {
+        writeln!(w, "{}let mut {:?}: {};", INDENT, Lvalue::Temp(i), temp.ty)?;
     }
 
     // Wrote any declaration? Add an empty line before the first block is printed.

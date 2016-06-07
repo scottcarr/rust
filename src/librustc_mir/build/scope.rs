@@ -254,9 +254,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     pub fn push_scope(&mut self, extent: CodeExtent, entry: BasicBlock) -> ScopeId {
         debug!("push_scope({:?})", extent);
         let parent_id = self.scopes.last().map(|s| s.id);
-        let id = ScopeId::new(self.scope_datas.len());
         let tcx = self.hir.tcx();
-        self.scope_datas.push(ScopeData {
+        let id = self.scope_datas.push(ScopeData {
             span: extent.span(&tcx.region_maps, &tcx.map).unwrap_or(DUMMY_SP),
             parent_scope: parent_id,
         });
@@ -267,7 +266,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
             free: None,
             cached_block: None,
         });
-        self.scope_auxiliary.vec.push(ScopeAuxiliary {
+        self.scope_auxiliary.push(ScopeAuxiliary {
             extent: extent,
             dom: self.cfg.current_location(entry),
             postdoms: vec![]

@@ -12,6 +12,8 @@ use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
 
+use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+
 use pretty;
 
 use traversal;
@@ -40,13 +42,13 @@ pub struct AddCallGuards;
 
 impl<'tcx> MirPass<'tcx> for AddCallGuards {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
-        let mut pred_count = vec![0u32; mir.basic_blocks.len()];
+        let mut pred_count = IdxVec::from_elem(0u32, &mir.basic_blocks);
 
         // Build the precedecessor map for the MIR
         for (_, data) in traversal::preorder(mir) {
             if let Some(ref term) = data.terminator {
                 for &tgt in term.successors().iter() {
-                    pred_count[tgt.index()] += 1;
+                    pred_count[tgt] += 1;
                 }
             }
         }
@@ -67,7 +69,7 @@ impl<'tcx> MirPass<'tcx> for AddCallGuards {
                         cleanup: Some(_),
                         ..
                     }, span, scope
-                }) if pred_count[destination.index()] > 1 => {
+                }) if pred_count[*destination] > 1 => {
                     // It's a critical edge, break it
                     let call_guard = BasicBlockData {
                         statements: vec![],
@@ -91,7 +93,7 @@ impl<'tcx> MirPass<'tcx> for AddCallGuards {
         pretty::dump_mir(tcx, "break_cleanup_edges", &0, src, mir, None);
         debug!("Broke {} N edges", new_blocks.len());
 
-        mir.basic_blocks.extend_from_slice(&new_blocks);
+        mir.basic_blocks.extend(new_blocks);
     }
 }
 

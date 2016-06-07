@@ -54,9 +54,9 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let cleanup_bundle = bcx.lpad().and_then(|l| l.bundle());
 
         let funclet_br = |this: &Self, bcx: BlockAndBuilder, bb: mir::BasicBlock| {
-            let lltarget = this.blocks[bb.index()].llbb;
+            let lltarget = this.blocks[bb].llbb;
             if let Some(cp) = cleanup_pad {
-                match this.cleanup_kind(bb) {
+                match this.cleanup_kinds[bb] {
                     CleanupKind::Funclet => {
                         // micro-optimization: generate a `ret` rather than a jump
                         // to a return block
@@ -71,10 +71,10 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         };
 
         let llblock = |this: &mut Self, target: mir::BasicBlock| {
-            let lltarget = this.blocks[target.index()].llbb;
+            let lltarget = this.blocks[target].llbb;
 
             if let Some(cp) = cleanup_pad {
-                match this.cleanup_kind(target) {
+                match this.cleanup_kinds[target] {
                     CleanupKind::Funclet => {
                         // MSVC cross-funclet jump - need a trampoline
 
@@ -91,7 +91,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 }
             } else {
                 if let (CleanupKind::NotCleanup, CleanupKind::Funclet) =
-                    (this.cleanup_kind(bb), this.cleanup_kind(target))
+                    (this.cleanup_kinds[bb], this.cleanup_kinds[target])
                 {
                     // jump *into* cleanup - need a landing pad if GNU
                     this.landing_pad_to(target).llbb
@@ -108,7 +108,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let terminator = data.terminator();
         debug!("trans_block: terminator: {:?}", terminator);
 
-        let debug_loc = DebugLoc::ScopeAt(self.scopes[terminator.scope.index()],
+        let debug_loc = DebugLoc::ScopeAt(self.scopes[terminator.scope],
                                           terminator.span);
         debug_loc.apply_to_bcx(&bcx);
         debug_loc.apply(bcx.fcx());
@@ -211,7 +211,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 if let Some(unwind) = unwind {
                     bcx.invoke(drop_fn,
                                &[llvalue],
-                               self.blocks[target.index()].llbb,
+                               self.blocks[target].llbb,
                                llblock(self, unwind),
                                cleanup_bundle);
                 } else {
@@ -492,7 +492,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 // Many different ways to call a function handled here
                 if let &Some(cleanup) = cleanup {
                     let ret_bcx = if let Some((_, target)) = *destination {
-                        self.blocks[target.index()]
+                        self.blocks[target]
                     } else {
                         self.unreachable_block()
                     };
@@ -697,27 +697,23 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         }
     }
 
-    fn cleanup_kind(&self, bb: mir::BasicBlock) -> CleanupKind {
-        self.cleanup_kinds[bb.index()]
-    }
-
     /// Return the landingpad wrapper around the given basic block
     ///
     /// No-op in MSVC SEH scheme.
     fn landing_pad_to(&mut self, target_bb: mir::BasicBlock) -> Block<'bcx, 'tcx>
     {
-        if let Some(block) = self.landing_pads[target_bb.index()] {
+        if let Some(block) = self.landing_pads[target_bb] {
             return block;
         }
 
         if base::wants_msvc_seh(self.fcx.ccx.sess()) {
-            return self.blocks[target_bb.index()];
+            return self.blocks[target_bb];
         }
 
         let target = self.bcx(target_bb);
 
         let block = self.fcx.new_block("cleanup", None);
-        self.landing_pads[target_bb.index()] = Some(block);
+        self.landing_pads[target_bb] = Some(block);
 
         let bcx = block.build();
         let ccx = bcx.ccx();
@@ -736,7 +732,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let data = self.mir.basic_block_data(bb);
         debug!("init_cpad({:?})", data);
 
-        match self.cleanup_kinds[bb.index()] {
+        match self.cleanup_kinds[bb] {
             CleanupKind::NotCleanup => {
                 bcx.set_lpad(None)
             }
@@ -767,7 +763,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     }
 
     fn bcx(&self, bb: mir::BasicBlock) -> BlockAndBuilder<'bcx, 'tcx> {
-        self.blocks[bb.index()].build()
+        self.blocks[bb].build()
     }
 
     fn make_return_dest(&mut self, bcx: &BlockAndBuilder<'bcx, 'tcx>,
@@ -782,7 +778,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 let lvalue_ty = self.mir.lvalue_ty(bcx.tcx(), dest);
                 let lvalue_ty = bcx.monomorphize(&lvalue_ty);
                 let ret_ty = lvalue_ty.to_ty(bcx.tcx());
-                match self.temps[idx as usize] {
+                match self.temps[idx] {
                     TempRef::Lvalue(dest) => dest,
                     TempRef::Operand(None) => {
                         // Handle temporary lvalues, specifically Operand ones, as
@@ -865,7 +861,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             }
             IndirectOperand(tmp, idx) => {
                 let op = self.trans_load(bcx, tmp, op.ty);
-                self.temps[idx as usize] = TempRef::Operand(Some(op));
+                self.temps[idx] = TempRef::Operand(Some(op));
                 return;
             }
             DirectOperand(idx) => {
@@ -873,7 +869,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                     llcast_ty
                 } else {
                     let op = op.unpack_if_pair(bcx);
-                    self.temps[idx as usize] = TempRef::Operand(Some(op));
+                    self.temps[idx] = TempRef::Operand(Some(op));
                     return;
                 }
             }
@@ -917,7 +913,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
             DirectOperand(idx) => {
                 let llptr = bcx.pointercast(llscratch, ret_ty.original_ty.ptr_to());
                 let op = self.trans_load(bcx, llptr, op.ty);
-                self.temps[idx as usize] = TempRef::Operand(Some(op));
+                self.temps[idx] = TempRef::Operand(Some(op));
             }
             Nothing | IndirectOperand(_, _) => bug!()
         }
@@ -932,7 +928,7 @@ enum ReturnDest {
     // Store the return value to the pointer
     Store(ValueRef),
     // Stores an indirect return value to an operand temporary lvalue
-    IndirectOperand(ValueRef, u32),
+    IndirectOperand(ValueRef, mir::Temp),
     // Stores a direct return value to an operand temporary lvalue
-    DirectOperand(u32)
+    DirectOperand(mir::Temp)
 }

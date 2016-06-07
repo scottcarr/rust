@@ -12,6 +12,7 @@ use llvm::ValueRef;
 use rustc::ty::{self, Ty, TypeFoldable};
 use rustc::mir::repr as mir;
 use rustc::mir::tcx::LvalueTy;
+use rustc_data_structures::indexed_vec::Idx;
 use abi;
 use adt;
 use base;
@@ -89,14 +90,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let ccx = bcx.ccx();
         let tcx = bcx.tcx();
         match *lvalue {
-            mir::Lvalue::Var(index) => self.vars[index as usize],
-            mir::Lvalue::Temp(index) => match self.temps[index as usize] {
+            mir::Lvalue::Var(var) => self.vars[var],
+            mir::Lvalue::Temp(temp) => match self.temps[temp] {
                 TempRef::Lvalue(lvalue) =>
                     lvalue,
                 TempRef::Operand(..) =>
                     bug!("using operand temp {:?} as lvalue", lvalue),
             },
-            mir::Lvalue::Arg(index) => self.args[index as usize],
+            mir::Lvalue::Arg(arg) => self.args[arg],
             mir::Lvalue::Static(def_id) => {
                 let const_ty = self.mir.lvalue_ty(tcx, lvalue);
                 LvalueRef::new_sized(consts::get_static(ccx, def_id).val, const_ty)
@@ -206,8 +207,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     where F: FnOnce(&mut Self, LvalueRef<'tcx>) -> U
     {
         match *lvalue {
-            mir::Lvalue::Temp(idx) => {
-                match self.temps[idx as usize] {
+            mir::Lvalue::Temp(temp) => {
+                match self.temps[temp] {
                     TempRef::Lvalue(lvalue) => f(self, lvalue),
                     TempRef::Operand(None) => {
                         let lvalue_ty = self.mir.lvalue_ty(bcx.tcx(), lvalue);
@@ -217,7 +218,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                                                        "lvalue_temp");
                         let ret = f(self, lvalue);
                         let op = self.trans_load(bcx, lvalue.llval, lvalue_ty.to_ty(bcx.tcx()));
-                        self.temps[idx as usize] = TempRef::Operand(Some(op));
+                        self.temps[temp] = TempRef::Operand(Some(op));
                         ret
                     }
                     TempRef::Operand(Some(_)) => {

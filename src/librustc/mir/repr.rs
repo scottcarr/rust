@@ -248,6 +248,18 @@ impl Debug for BasicBlock {
     }
 }
 
+impl From<usize> for BasicBlock {
+    fn from(n: usize) -> BasicBlock {
+        assert!(n < (u32::MAX as usize));
+        BasicBlock(n as u32)
+    }
+}
+impl Into<usize> for BasicBlock {
+    fn into(self: BasicBlock) -> usize {
+        self.index()
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // BasicBlockData and Terminator
 

@@ -50,3 +50,4 @@ pub mod mir_map;
 pub mod pretty;
 pub mod transform;
 pub mod traversal;
+pub mod super_mir;

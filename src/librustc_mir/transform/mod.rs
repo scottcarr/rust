@@ -16,3 +16,4 @@ pub mod type_check;
 pub mod break_cleanup_edges;
 pub mod promote_consts;
 pub mod qualify_consts;
+pub mod mir_cfg_test;

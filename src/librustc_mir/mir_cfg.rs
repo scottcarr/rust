@@ -48,17 +48,21 @@ pub trait NodeIndex: Copy + Debug + Eq + Ord + Hash + Into<usize> + From<usize> 
     }
 }
 
-type NodeType = BasicBlock;
-//type IndexType = BasicBlock;
+pub type NodeType = BasicBlock;
 
 fn compute_predecessors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> HashMap<NodeType, Vec<NodeType>> {
     let mut predecessors = HashMap::new();
+    predecessors.insert(START_BLOCK, vec![]);
     for (from, data) in traversal::preorder(mir) {
         if let Some(ref term) = data.terminator {
             for &tgt in term.successors().iter() {
                 predecessors.entry(tgt).or_insert(vec![]).push(from);
             }
         }
+    }
+    for ps in predecessors.values_mut() {
+        ps.sort();
+        ps.dedup();
     }
     predecessors
 }
@@ -70,30 +74,32 @@ fn compute_successors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> HashMap<NodeType, Vec<Nod
             successors.entry(from).or_insert(vec![]).append(term.successors().to_mut());
         }
     }
+    for ss in successors.values_mut() {
+        ss.sort();
+        ss.dedup();
+    }
     successors
 }
 
-fn count_nodes<'a, 'tcx>(mir: &'a Mir<'tcx>) -> usize { mir.basic_blocks.len() }
-    
-impl SuperMir {
-    fn new<'a, 'tcx>(mir: &'a Mir<'tcx>) -> Self {
-        SuperMir { 
-            predecessors: HashMap::new(), 
-            successors: HashMap::new(), 
-            n_nodes: count_nodes(mir), 
-            start_node: BasicBlock::new(0), // Scott: is there some better way of setting this?
+impl MirCfg {
+    pub fn new<'a, 'tcx>(mir: &'a Mir<'tcx>) -> Self {
+        MirCfg { 
+            predecessors: compute_predecessors(mir), 
+            successors: compute_successors(mir), 
+            n_nodes: mir.basic_blocks.len(), 
+            start_node: START_BLOCK,
         }
     }
 }
 
-struct SuperMir {
+pub struct MirCfg {
     predecessors: HashMap<NodeType,Vec<NodeType>>,
     successors: HashMap<NodeType,Vec<NodeType>>,
     start_node: NodeType,
     n_nodes: usize,
 }
 
-impl Graph for SuperMir {
+impl Graph for MirCfg {
 
     type Node = NodeType;
 
@@ -113,12 +119,12 @@ impl Graph for SuperMir {
     }
 }
 
-impl<'g> GraphPredecessors<'g> for SuperMir {
+impl<'g> GraphPredecessors<'g> for MirCfg {
     type Item = NodeType;
     type Iter = iter::Cloned<slice::Iter<'g, NodeType>>;
 }
 
-impl<'g>  GraphSuccessors<'g> for SuperMir {
+impl<'g>  GraphSuccessors<'g> for MirCfg {
    type Item = NodeType;
     type Iter = iter::Cloned<slice::Iter<'g, NodeType>>;
 }

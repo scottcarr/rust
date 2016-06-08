@@ -108,6 +108,7 @@ pub mod mir {
     pub mod visit;
     pub mod transform;
     pub mod mir_map;
+    pub mod mir_cfg;
 }
 
 pub mod session;

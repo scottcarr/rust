@@ -12,6 +12,8 @@ use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IdxVec, Idx};
+use rustc_data_structures::graph_algorithms::NodeIndex;
+use rustc_data_structures::graph_algorithms::dominators::Dominators;
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -28,6 +30,7 @@ use syntax::ast::{self, Name};
 use syntax::codemap::Span;
 
 use super::cache::Cache;
+use super::mir_cfg::MirCfg;
 
 macro_rules! newtype_index {
     ($name:ident, $debug_name:expr) => (
@@ -141,6 +144,16 @@ impl<'tcx> Mir<'tcx> {
     }
 
     #[inline]
+    pub fn successors(&self) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
+        self.cache.successors(self)
+    }
+
+    #[inline]
+    pub fn dominators(&self) -> Ref<Dominators<MirCfg>> {
+        self.cache.dominators(self)
+    }
+
+    #[inline]
     pub fn predecessors_for(&self, bb: BasicBlock) -> Ref<Vec<BasicBlock>> {
         Ref::map(self.predecessors(), |p| &p[bb])
     }
@@ -159,6 +172,24 @@ impl<'tcx> IndexMut<BasicBlock> for Mir<'tcx> {
     #[inline]
     fn index_mut(&mut self, index: BasicBlock) -> &mut BasicBlockData<'tcx> {
         &mut self.basic_blocks_mut()[index]
+    }
+}
+
+impl From<usize> for BasicBlock {
+    fn from(n: usize) -> BasicBlock {
+        assert!(n < (u32::MAX as usize));
+        BasicBlock(n as u32)
+    }
+}
+impl Into<usize> for BasicBlock {
+    fn into(self: BasicBlock) -> usize {
+        self.index()
+    }
+}
+
+impl NodeIndex for BasicBlock {
+    fn as_usize(self) -> usize {
+        self.index()
     }
 }
 

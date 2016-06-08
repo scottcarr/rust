@@ -10,16 +10,18 @@
 
 use std::cell::{Ref, RefCell};
 use rustc_data_structures::indexed_vec::IdxVec;
-
+use rustc_data_structures::graph_algorithms::dominators::{dominators,Dominators};
 use mir::repr::{Mir, BasicBlock};
+use mir::mir_cfg::MirCfg;
 
 use rustc_serialize as serialize;
 
 #[derive(Clone)]
 pub struct Cache {
-    predecessors: RefCell<Option<IdxVec<BasicBlock, Vec<BasicBlock>>>>
+    predecessors: RefCell<Option<IdxVec<BasicBlock, Vec<BasicBlock>>>>,
+    successors: RefCell<Option<IdxVec<BasicBlock, Vec<BasicBlock>>>>,
+    dominators: RefCell<Option<Dominators<MirCfg>>>,
 }
-
 
 impl serialize::Encodable for Cache {
     fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
@@ -33,17 +35,20 @@ impl serialize::Decodable for Cache {
     }
 }
 
-
 impl Cache {
     pub fn new() -> Self {
         Cache {
-            predecessors: RefCell::new(None)
+            predecessors: RefCell::new(None),
+            successors: RefCell::new(None),
+            dominators: RefCell::new(None),
         }
     }
 
     pub fn invalidate(&self) {
         // FIXME: consider being more fine-grained
         *self.predecessors.borrow_mut() = None;
+        *self.successors.borrow_mut() = None;
+        *self.dominators.borrow_mut() = None;
     }
 
     pub fn predecessors(&self, mir: &Mir) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
@@ -52,6 +57,22 @@ impl Cache {
         }
 
         Ref::map(self.predecessors.borrow(), |p| p.as_ref().unwrap())
+    }
+
+    pub fn successors(&self, mir: &Mir) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
+        if self.successors.borrow().is_none() {
+            *self.successors.borrow_mut() = Some(calculate_successors(mir));
+        }
+
+        Ref::map(self.successors.borrow(), |p| p.as_ref().unwrap())
+    }
+
+    pub fn dominators(&self, mir: &Mir) -> Ref<Dominators<MirCfg>> {
+        if self.dominators.borrow().is_none() {
+            *self.dominators.borrow_mut() = Some(calculate_dominators(mir, self));
+        }
+
+        Ref::map(self.dominators.borrow(), |p| p.as_ref().unwrap())
     }
 }
 
@@ -67,3 +88,24 @@ fn calculate_predecessors(mir: &Mir) -> IdxVec<BasicBlock, Vec<BasicBlock>> {
 
     result
 }
+
+fn calculate_successors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> IdxVec<BasicBlock, Vec<BasicBlock>> {
+    let mut successors = IdxVec::from_elem(vec![], mir.basic_blocks());
+    for (bb, data) in mir.basic_blocks().iter_enumerated() {
+        if let Some(ref term) = data.terminator {
+            successors[bb].append(term.successors().to_mut());
+        }
+    }
+    // SCOTT do we need this?  If so, shouldn't we dedup predecessors?
+    //for ss in successors.values_mut() {
+    //    ss.sort();
+    //    ss.dedup();
+    //}
+    successors
+}
+
+fn calculate_dominators(mir: &Mir, cache: &Cache) -> Dominators<MirCfg> {
+    let m = MirCfg::new(mir, cache);
+    dominators(&m)
+}
+

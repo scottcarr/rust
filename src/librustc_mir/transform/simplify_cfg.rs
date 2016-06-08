@@ -33,7 +33,7 @@
 
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
@@ -67,13 +67,13 @@ impl<'l> Pass for SimplifyCfg<'l> {
 }
 
 pub struct CfgSimplifier<'a, 'tcx: 'a> {
-    basic_blocks: &'a mut IdxVec<BasicBlock, BasicBlockData<'tcx>>,
-    pred_count: IdxVec<BasicBlock, u32>
+    basic_blocks: &'a mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+    pred_count: IndexVec<BasicBlock, u32>
 }
 
 impl<'a, 'tcx: 'a> CfgSimplifier<'a, 'tcx> {
     fn new(mir: &'a mut Mir<'tcx>) -> Self {
-        let mut pred_count = IdxVec::from_elem(0u32, mir.basic_blocks());
+        let mut pred_count = IndexVec::from_elem(0u32, mir.basic_blocks());
 
         // we can't use mir.predecessors() here because that counts
         // dead blocks, which we don't want to.

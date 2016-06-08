@@ -19,7 +19,7 @@ use syntax::ast;
 use syntax::codemap::Span;
 use syntax::parse::token::keywords;
 
-use rustc_data_structures::indexed_vec::{IdxVec, Idx};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     hir: Cx<'a, 'gcx, 'tcx>,
@@ -36,7 +36,7 @@ pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     ///  but these are liable to get out of date once optimization
     ///  begins. They are also hopefully temporary, and will be
     ///  no longer needed when we adopt graph-based regions.
-    scope_auxiliary: IdxVec<ScopeId, ScopeAuxiliary>,
+    scope_auxiliary: IndexVec<ScopeId, ScopeAuxiliary>,
 
     /// the current set of loops; see the `scope` module for more
     /// details
@@ -44,11 +44,11 @@ pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 
     /// the vector of all scopes that we have created thus far;
     /// we track this for debuginfo later
-    scope_datas: IdxVec<ScopeId, ScopeData>,
+    scope_datas: IndexVec<ScopeId, ScopeData>,
 
-    var_decls: IdxVec<Var, VarDecl<'tcx>>,
+    var_decls: IndexVec<Var, VarDecl<'tcx>>,
     var_indices: NodeMap<Var>,
-    temp_decls: IdxVec<Temp, TempDecl<'tcx>>,
+    temp_decls: IndexVec<Temp, TempDecl<'tcx>>,
     unit_temp: Option<Lvalue<'tcx>>,
 
     /// cached block with the RESUME terminator; this is created
@@ -59,7 +59,7 @@ pub struct Builder<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 }
 
 struct CFG<'tcx> {
-    basic_blocks: IdxVec<BasicBlock, BasicBlockData<'tcx>>,
+    basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
 }
 
 /// For each scope, we track the extent (from the HIR) and a
@@ -94,7 +94,7 @@ pub struct Location {
     pub statement_index: usize,
 }
 
-pub type ScopeAuxiliaryVec = IdxVec<ScopeId, ScopeAuxiliary>;
+pub type ScopeAuxiliaryVec = IndexVec<ScopeId, ScopeAuxiliary>;
 
 ///////////////////////////////////////////////////////////////////////////
 /// The `BlockAnd` "monad" packages up the new basic block along with a
@@ -238,21 +238,21 @@ pub fn construct_const<'a, 'gcx, 'tcx>(hir: Cx<'a, 'gcx, 'tcx>,
     });
 
     let ty = tcx.expr_ty_adjusted(ast_expr);
-    builder.finish(vec![], IdxVec::new(), ty::FnConverging(ty))
+    builder.finish(vec![], IndexVec::new(), ty::FnConverging(ty))
 }
 
 impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     fn new(hir: Cx<'a, 'gcx, 'tcx>, span: Span) -> Builder<'a, 'gcx, 'tcx> {
         let mut builder = Builder {
             hir: hir,
-            cfg: CFG { basic_blocks: IdxVec::new() },
+            cfg: CFG { basic_blocks: IndexVec::new() },
             fn_span: span,
             scopes: vec![],
-            scope_datas: IdxVec::new(),
-            scope_auxiliary: IdxVec::new(),
+            scope_datas: IndexVec::new(),
+            scope_auxiliary: IndexVec::new(),
             loop_scopes: vec![],
-            temp_decls: IdxVec::new(),
-            var_decls: IdxVec::new(),
+            temp_decls: IndexVec::new(),
+            var_decls: IndexVec::new(),
             var_indices: NodeMap(),
             unit_temp: None,
             cached_resume_block: None,
@@ -266,7 +266,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
     fn finish(self,
               upvar_decls: Vec<UpvarDecl>,
-              arg_decls: IdxVec<Arg, ArgDecl<'tcx>>,
+              arg_decls: IndexVec<Arg, ArgDecl<'tcx>>,
               return_ty: ty::FnOutput<'tcx>)
               -> (Mir<'tcx>, ScopeAuxiliaryVec) {
         for (index, block) in self.cfg.basic_blocks.iter().enumerate() {
@@ -277,7 +277,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
 
         (Mir::new(self.cfg.basic_blocks,
                   self.scope_datas,
-                  IdxVec::new(),
+                  IndexVec::new(),
                   return_ty,
                   self.var_decls,
                   arg_decls,
@@ -293,7 +293,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                         arguments: A,
                         argument_scope_id: ScopeId,
                         ast_block: &'gcx hir::Block)
-                        -> BlockAnd<IdxVec<Arg, ArgDecl<'tcx>>>
+                        -> BlockAnd<IndexVec<Arg, ArgDecl<'tcx>>>
         where A: Iterator<Item=(Ty<'gcx>, Option<&'gcx hir::Pat>)>
     {
         // to start, translate the argument patterns and collect the argument types.

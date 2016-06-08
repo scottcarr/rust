@@ -15,7 +15,7 @@ use rustc_data_structures::bitvec::BitVector;
 use rustc::mir::repr as mir;
 use rustc::mir::repr::TerminatorKind;
 use rustc::mir::visit::{Visitor, LvalueContext};
-use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc_mir::traversal;
 use common::{self, Block, BlockAndBuilder};
 use super::rvalue;
@@ -164,9 +164,9 @@ pub enum CleanupKind {
 
 pub fn cleanup_kinds<'bcx,'tcx>(_bcx: Block<'bcx,'tcx>,
                                 mir: &mir::Mir<'tcx>)
-                                -> IdxVec<mir::BasicBlock, CleanupKind>
+                                -> IndexVec<mir::BasicBlock, CleanupKind>
 {
-    fn discover_masters<'tcx>(result: &mut IdxVec<mir::BasicBlock, CleanupKind>,
+    fn discover_masters<'tcx>(result: &mut IndexVec<mir::BasicBlock, CleanupKind>,
                               mir: &mir::Mir<'tcx>) {
         for (bb, data) in mir.basic_blocks().iter_enumerated() {
             match data.terminator().kind {
@@ -193,9 +193,9 @@ pub fn cleanup_kinds<'bcx,'tcx>(_bcx: Block<'bcx,'tcx>,
         }
     }
 
-    fn propagate<'tcx>(result: &mut IdxVec<mir::BasicBlock, CleanupKind>,
+    fn propagate<'tcx>(result: &mut IndexVec<mir::BasicBlock, CleanupKind>,
                        mir: &mir::Mir<'tcx>) {
-        let mut funclet_succs = IdxVec::from_elem(None, mir.basic_blocks());
+        let mut funclet_succs = IndexVec::from_elem(None, mir.basic_blocks());
 
         let mut set_successor = |funclet: mir::BasicBlock, succ| {
             match funclet_succs[funclet] {
@@ -249,7 +249,7 @@ pub fn cleanup_kinds<'bcx,'tcx>(_bcx: Block<'bcx,'tcx>,
         }
     }
 
-    let mut result = IdxVec::from_elem(CleanupKind::NotCleanup, mir.basic_blocks());
+    let mut result = IndexVec::from_elem(CleanupKind::NotCleanup, mir.basic_blocks());
 
     discover_masters(&mut result, mir);
     propagate(&mut result, mir);

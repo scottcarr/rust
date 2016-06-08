@@ -12,7 +12,7 @@ use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
 
-use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 
 use pretty;
 
@@ -40,7 +40,7 @@ pub struct AddCallGuards;
 
 impl<'tcx> MirPass<'tcx> for AddCallGuards {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
-        let pred_count: IdxVec<_, _> =
+        let pred_count: IndexVec<_, _> =
             mir.predecessors().iter().map(|ps| ps.len()).collect();
 
         // We need a place to store the new blocks generated

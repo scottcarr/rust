@@ -11,14 +11,14 @@
 use super::gather_moves::Location;
 use rustc::ty::Ty;
 use rustc::mir::repr::*;
-use rustc_data_structures::indexed_vec::{IdxVec, Idx};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use syntax::codemap::Span;
 
 /// This struct represents a patch to MIR, which can add
 /// new statements and basic blocks and patch over block
 /// terminators.
 pub struct MirPatch<'tcx> {
-    patch_map: IdxVec<BasicBlock, Option<TerminatorKind<'tcx>>>,
+    patch_map: IndexVec<BasicBlock, Option<TerminatorKind<'tcx>>>,
     new_blocks: Vec<BasicBlockData<'tcx>>,
     new_statements: Vec<(Location, StatementKind<'tcx>)>,
     new_temps: Vec<TempDecl<'tcx>>,
@@ -29,7 +29,7 @@ pub struct MirPatch<'tcx> {
 impl<'tcx> MirPatch<'tcx> {
     pub fn new(mir: &Mir<'tcx>) -> Self {
         let mut result = MirPatch {
-            patch_map: IdxVec::from_elem(None, mir.basic_blocks()),
+            patch_map: IndexVec::from_elem(None, mir.basic_blocks()),
             new_blocks: vec![],
             new_temps: vec![],
             new_statements: vec![],

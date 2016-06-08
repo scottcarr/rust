@@ -193,6 +193,10 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 })
             }
 
+            mir::TerminatorKind::Unreachable => {
+                bcx.unreachable();
+            }
+
             mir::TerminatorKind::Drop { ref location, target, unwind } => {
                 let lvalue = self.trans_lvalue(&bcx, location);
                 let ty = lvalue.ty.to_ty(bcx.tcx());

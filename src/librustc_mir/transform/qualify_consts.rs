@@ -25,7 +25,7 @@ use rustc::ty::{self, TyCtxt, Ty};
 use rustc::ty::cast::CastTy;
 use rustc::mir::repr::*;
 use rustc::mir::mir_map::MirMap;
-use rustc::mir::transform::{Pass, MirMapPass, MirSource};
+use rustc::mir::transform::{Pass, MirMapPass, MirPassHook, MirSource};
 use rustc::mir::visit::{LvalueContext, Visitor};
 use rustc::util::nodemap::DefIdMap;
 use syntax::abi::Abi;
@@ -903,10 +903,15 @@ fn qualify_const_item_cached<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
 pub struct QualifyAndPromoteConstants;
 
-impl Pass for QualifyAndPromoteConstants {}
+impl Pass for QualifyAndPromoteConstants {
+    fn name(&self) -> &str { "qualify-consts" }
+}
 
 impl<'tcx> MirMapPass<'tcx> for QualifyAndPromoteConstants {
-    fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, map: &mut MirMap<'tcx>) {
+    fn run_pass<'a>(&mut self,
+                    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                    map: &mut MirMap<'tcx>,
+                    hooks: &mut [Box<for<'s> MirPassHook<'s>>]) {
         let mut qualif_map = DefIdMap();
 
         // First, visit `const` items, potentially recursing, to get
@@ -942,6 +947,10 @@ impl<'tcx> MirMapPass<'tcx> for QualifyAndPromoteConstants {
             };
             let param_env = ty::ParameterEnvironment::for_item(tcx, id);
 
+            for hook in &mut *hooks {
+                hook.on_mir_pass(tcx, src, mir, self, false);
+            }
+
             if mode == Mode::Fn || mode == Mode::ConstFn {
                 // This is ugly because Qualifier holds onto mir,
                 // which can't be mutated until its scope ends.
@@ -967,6 +976,10 @@ impl<'tcx> MirMapPass<'tcx> for QualifyAndPromoteConstants {
                 let mut qualifier = Qualifier::new(tcx, param_env, &mut qualif_map,
                                                    None, def_id, mir, mode);
                 qualifier.qualify_const();
+            }
+
+            for hook in &mut *hooks {
+                hook.on_mir_pass(tcx, src, mir, self, true);
             }
 
             // Statics must be Sync.

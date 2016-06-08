@@ -697,4 +697,6 @@ impl Pass for TypeckMir {
     fn dep_node(&self, def_id: DefId) -> DepNode<DefId> {
         DepNode::MirTypeck(def_id)
     }
+
+    fn name(&self) -> &str { "typeck-mir" }
 }

@@ -25,7 +25,7 @@ impl MirCfg {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MirCfg {
     predecessors: IdxVec<BasicBlock,Vec<BasicBlock>>,
     successors: IdxVec<BasicBlock,Vec<BasicBlock>>,

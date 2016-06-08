@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2016 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:fail
+#![feature(type_macros, concat_idents, rustc_attrs)]
+#![allow(unused)]
 
-fn a() {}
+#[derive(Debug)] struct FooBar;
+#[derive(Debug)] struct Baz<T>(T, concat_idents!(Foo, Bar));
 
-fn b() {
-    panic!();
-}
-
-fn main() {
-    let _x = vec![0];
-    a();
-    let _y = vec![0];
-    b();
-}
+#[rustc_error]
+fn main() {} //~ ERROR compilation successful

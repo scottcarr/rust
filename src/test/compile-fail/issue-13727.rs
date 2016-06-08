@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2016 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:fail
-
-fn a() {}
-
-fn b() {
-    panic!();
+fn test(val: u8) {
+  match val {
+    256 => print!("0b1110\n"),
+    512 => print!("0b1111\n"),
+    //~^ ERROR: unreachable pattern
+    _   => print!("fail\n"),
+  }
 }
 
 fn main() {
-    let _x = vec![0];
-    a();
-    let _y = vec![0];
-    b();
+  test(1);
 }

@@ -49,6 +49,7 @@ pub mod unify;
 pub mod fnv;
 pub mod tuple_slice;
 pub mod veccell;
+pub mod graph_algorithms;
 
 // See comments in src/librustc/lib.rs
 #[doc(hidden)]

@@ -11,8 +11,8 @@
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
-use transform::graph_algorithms::dominators::dominators;
-use transform::graph_algorithms::Graph;
+use rustc_data_structures::graph_algorithms::dominators::dominators;
+use rustc_data_structures::graph_algorithms::Graph;
 use mir_cfg::MirCfg;
 use pretty;
 
@@ -27,11 +27,13 @@ impl TestMirCfg {
 impl<'tcx> MirPass<'tcx> for TestMirCfg {
     fn run_pass<'a>(&mut self, tcx: TyCtxt<'a, 'tcx, 'tcx>, src: MirSource, mir: &mut Mir<'tcx>) {
         let s = MirCfg::new(mir);
-        let d = dominators(&s);
+        //let d = dominators(&s);
         debug!("num_nodes: {}", s.num_nodes());
         for &b in mir.all_basic_blocks().iter() {
-            debug!("basic block: {:?} predecessors: {:?} successors: {:?}, immediate_dominator: {:?}", 
-                   b, s.predecessors(b), s.successors(b), d.immediate_dominator(b));
+            //debug!("basic block: {:?} predecessors: {:?} successors: {:?}, immediate_dominator: {:?}", 
+            //       b, s.predecessors(b), s.successors(b), d.immediate_dominator(b));
+            debug!("basic block: {:?} predecessors: {:?} successors: {:?}", 
+                   b, s.predecessors(b), s.successors(b));
         }
         pretty::dump_mir(tcx, "test_mir_cfg", &0, src, mir, None);
     }

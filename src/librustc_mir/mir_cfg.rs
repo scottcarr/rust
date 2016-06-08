@@ -17,7 +17,7 @@ use std::convert::From;
 use std::collections::HashMap;
 
 use traversal;
-use transform::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors, NodeIndex};
+use rustc_data_structures::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors, NodeIndex};
 
 pub type NodeType = BasicBlock;
 
@@ -100,11 +100,11 @@ impl<'g>  GraphSuccessors<'g> for MirCfg {
     type Iter = iter::Cloned<slice::Iter<'g, NodeType>>;
 }
 
-impl NodeIndex for BasicBlock {
-    fn as_usize(self) -> usize {
-        self.index()
-    }
-}
+//impl NodeIndex for BasicBlock {
+//    fn as_usize(self) -> usize {
+//        self.index()
+//    }
+//}
 //impl From<usize> for BasicBlock {
 //    fn from<usize>(n: usize) -> BasicBlock {
 //        BasicBlock(n)

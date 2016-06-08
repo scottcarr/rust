@@ -18,4 +18,3 @@ pub mod promote_consts;
 pub mod qualify_consts;
 pub mod mir_cfg_test;
 pub mod dump_mir;
-pub mod graph_algorithms;

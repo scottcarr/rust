@@ -24,6 +24,7 @@ use std::{iter, u32};
 use std::ops::{Index, IndexMut};
 use syntax::ast::{self, Name};
 use syntax::codemap::Span;
+use rustc_data_structures::graph_algorithms::NodeIndex;
 
 /// Lowered representation of a single function.
 #[derive(Clone, RustcEncodable, RustcDecodable)]
@@ -256,6 +257,12 @@ impl From<usize> for BasicBlock {
 }
 impl Into<usize> for BasicBlock {
     fn into(self: BasicBlock) -> usize {
+        self.index()
+    }
+}
+
+impl NodeIndex for BasicBlock {
+    fn as_usize(self) -> usize {
         self.index()
     }
 }

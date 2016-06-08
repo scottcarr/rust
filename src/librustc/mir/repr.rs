@@ -104,13 +104,13 @@ impl<'tcx> IndexMut<BasicBlock> for Mir<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Mutability and borrow kinds
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum Mutability {
     Mut,
     Not,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum BorrowKind {
     /// Data must be immutable and is aliasable.
     Shared,
@@ -158,6 +158,12 @@ pub enum BorrowKind {
 
 ///////////////////////////////////////////////////////////////////////////
 // Variables and temps
+
+pub enum Decl {
+    VarDecl,
+    TempDecl,
+    UpVarDecl,
+}
 
 /// A "variable" is a binding declared by the user as part of the fn
 /// decl, a let, etc.
@@ -604,14 +610,14 @@ pub enum AssertMessage<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Statements
 
-#[derive(Clone, RustcEncodable, RustcDecodable)]
+#[derive(Clone, RustcEncodable, RustcDecodable, Eq, Hash, PartialEq)]
 pub struct Statement<'tcx> {
     pub span: Span,
     pub scope: ScopeId,
     pub kind: StatementKind<'tcx>,
 }
 
-#[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, RustcEncodable, RustcDecodable, Eq, Hash, PartialEq)]
 pub enum StatementKind<'tcx> {
     Assign(Lvalue<'tcx>, Rvalue<'tcx>),
 }
@@ -630,7 +636,7 @@ impl<'tcx> Debug for Statement<'tcx> {
 
 /// A path to a value; something that can be evaluated without
 /// changing or disturbing program state.
-#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable, Hash, Eq)]
 pub enum Lvalue<'tcx> {
     /// local variable declared by the user
     Var(u32),
@@ -815,7 +821,7 @@ pub struct ScopeData {
 /// These are values that can appear inside an rvalue (or an index
 /// lvalue). They are intentionally limited to prevent rvalues from
 /// being nested in one another.
-#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable, Hash, Eq)]
 pub enum Operand<'tcx> {
     Consume(Lvalue<'tcx>),
     Constant(Constant<'tcx>),
@@ -834,7 +840,7 @@ impl<'tcx> Debug for Operand<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 /// Rvalues
 
-#[derive(Clone, RustcEncodable, RustcDecodable)]
+#[derive(Clone, RustcEncodable, RustcDecodable, Hash, Eq, PartialEq)]
 pub enum Rvalue<'tcx> {
     /// x (either a move or copy, depending on type of x)
     Use(Operand<'tcx>),
@@ -883,7 +889,7 @@ pub enum Rvalue<'tcx> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum CastKind {
     Misc,
 
@@ -901,7 +907,7 @@ pub enum CastKind {
     Unsize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum AggregateKind<'tcx> {
     Vec,
     Tuple,
@@ -909,7 +915,7 @@ pub enum AggregateKind<'tcx> {
     Closure(DefId, ClosureSubsts<'tcx>),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum BinOp {
     /// The `+` operator (addition)
     Add,
@@ -955,7 +961,7 @@ impl BinOp {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum UnOp {
     /// The `!` operator for logical inversion
     Not,
@@ -1073,7 +1079,7 @@ pub struct Constant<'tcx> {
     pub literal: Literal<'tcx>,
 }
 
-#[derive(Clone, RustcEncodable, RustcDecodable)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash)]
 pub struct TypedConstVal<'tcx> {
     pub ty: Ty<'tcx>,
     pub span: Span,

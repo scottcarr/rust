@@ -85,7 +85,10 @@ fn calculate_predecessors(mir: &Mir) -> IdxVec<BasicBlock, Vec<BasicBlock>> {
             }
         }
     }
-
+    for ps in result.iter_mut() {
+        ps.sort();
+        ps.dedup();
+    }
     result
 }
 
@@ -96,11 +99,10 @@ fn calculate_successors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> IdxVec<BasicBlock, Vec<
             successors[bb].append(term.successors().to_mut());
         }
     }
-    // SCOTT do we need this?  If so, shouldn't we dedup predecessors?
-    //for ss in successors.values_mut() {
-    //    ss.sort();
-    //    ss.dedup();
-    //}
+    for ss in successors.iter_mut() {
+        ss.sort();
+        ss.dedup();
+    }
     successors
 }
 

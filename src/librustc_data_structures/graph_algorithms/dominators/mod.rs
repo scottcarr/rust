@@ -105,7 +105,7 @@ fn intersect<G: Graph>(post_order_rank: &NodeVec<G, usize>,
     return node1;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Dominators<G: Graph> {
     post_order_rank: NodeVec<G, usize>,
     immediate_dominators: NodeVec<G, Option<G::Node>>,

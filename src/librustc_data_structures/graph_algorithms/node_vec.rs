@@ -15,7 +15,7 @@ pub use std::slice::Iter;
 
 use super::Graph;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeVec<G: Graph, T> {
     pub vec: Vec<T>,
     graph: PhantomData<G>,

@@ -159,12 +159,6 @@ pub enum BorrowKind {
 ///////////////////////////////////////////////////////////////////////////
 // Variables and temps
 
-pub enum Decl {
-    VarDecl,
-    TempDecl,
-    UpVarDecl,
-}
-
 /// A "variable" is a binding declared by the user as part of the fn
 /// decl, a let, etc.
 #[derive(Clone, Debug, RustcEncodable, RustcDecodable)]

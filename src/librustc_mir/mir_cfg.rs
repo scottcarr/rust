@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 use traversal;
 use rustc_data_structures::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors, NodeIndex};
+use rustc_data_structures::graph_algorithms::dominators::dominators;
 
 pub type NodeType = BasicBlock;
 
@@ -59,7 +60,11 @@ impl MirCfg {
             successors: compute_successors(mir), 
             n_nodes: mir.basic_blocks.len(), 
             start_node: START_BLOCK,
+
         }
+    }
+    pub fn dominators(&self) {
+        return dominators(self);
     }
 }
 
@@ -100,13 +105,47 @@ impl<'g>  GraphSuccessors<'g> for MirCfg {
     type Iter = iter::Cloned<slice::Iter<'g, NodeType>>;
 }
 
-//impl NodeIndex for BasicBlock {
-//    fn as_usize(self) -> usize {
-//        self.index()
-//    }
-//}
-//impl From<usize> for BasicBlock {
-//    fn from<usize>(n: usize) -> BasicBlock {
-//        BasicBlock(n)
-//    }
-//}
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub struct StatementLoc {
+    basic_block: BasicBlock,
+    statement_idx: usize,
+}
+
+pub type TempIdx = u32;
+
+pub struct ReachingDefinitions {
+    pub tmp_defs: HashMap<StatementLoc, TempIdx>,
+    pub mir_cfg: MirCfg,
+}
+
+fn find_tmp_defs(mir: &Mir) -> HashMap<StatementLoc, TempIdx> {
+    let mut defs = HashMap::new();
+    for (bb_idx, data) in mir.all_basic_blocks().iter().map(|&b| (b, mir.basic_block_data(b))) {
+        for (s_idx, s) in data.statements.iter().enumerate() {
+            match s.kind {
+                StatementKind::Assign(ref lvalue, _) => {
+                    match *lvalue {
+                        Lvalue::Temp(tmp_id) => {
+                            defs.insert(StatementLoc{basic_block: bb_idx, statement_idx: s_idx}, tmp_id);
+                        },
+                        _ => { }
+                    }
+                }
+            }
+        }
+    }
+    defs
+}
+
+impl<'a> ReachingDefinitions {
+    pub fn new(mir: &'a mut Mir) -> Self {
+        let r = ReachingDefinitions {
+            mir_cfg: MirCfg::new(mir),
+            tmp_defs: find_tmp_defs(mir),
+        };
+        r
+    }
+    pub fn is_dominator(me: StatementLoc, other: StatementLoc) {
+    }
+}
+

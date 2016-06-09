@@ -31,26 +31,26 @@ impl Idx for usize {
 }
 
 #[derive(Clone)]
-pub struct IdxVec<I: Idx, T> {
+pub struct IndexVec<I: Idx, T> {
     pub raw: Vec<T>,
     _marker: PhantomData<Fn(&I)>
 }
 
-impl<I: Idx, T: serialize::Encodable> serialize::Encodable for IdxVec<I, T> {
+impl<I: Idx, T: serialize::Encodable> serialize::Encodable for IndexVec<I, T> {
     fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         serialize::Encodable::encode(&self.raw, s)
     }
 }
 
-impl<I: Idx, T: serialize::Decodable> serialize::Decodable for IdxVec<I, T> {
+impl<I: Idx, T: serialize::Decodable> serialize::Decodable for IndexVec<I, T> {
     fn decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
         serialize::Decodable::decode(d).map(|v| {
-            IdxVec { raw: v, _marker: PhantomData }
+            IndexVec { raw: v, _marker: PhantomData }
         })
     }
 }
 
-impl<I: Idx, T: fmt::Debug> fmt::Debug for IdxVec<I, T> {
+impl<I: Idx, T: fmt::Debug> fmt::Debug for IndexVec<I, T> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.raw, fmt)
     }
@@ -58,22 +58,22 @@ impl<I: Idx, T: fmt::Debug> fmt::Debug for IdxVec<I, T> {
 
 pub type Enumerated<I, J> = iter::Map<iter::Enumerate<J>, IntoIdx<I>>;
 
-impl<I: Idx, T> IdxVec<I, T> {
+impl<I: Idx, T> IndexVec<I, T> {
     #[inline]
     pub fn new() -> Self {
-        IdxVec { raw: Vec::new(), _marker: PhantomData }
+        IndexVec { raw: Vec::new(), _marker: PhantomData }
     }
 
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
-        IdxVec { raw: Vec::with_capacity(capacity), _marker: PhantomData }
+        IndexVec { raw: Vec::with_capacity(capacity), _marker: PhantomData }
     }
 
     #[inline]
-    pub fn from_elem<S>(elem: T, universe: &IdxVec<I, S>) -> Self
+    pub fn from_elem<S>(elem: T, universe: &IndexVec<I, S>) -> Self
         where T: Clone
     {
-        IdxVec { raw: vec![elem; universe.len()], _marker: PhantomData }
+        IndexVec { raw: vec![elem; universe.len()], _marker: PhantomData }
     }
 
     #[inline]
@@ -137,7 +137,7 @@ impl<I: Idx, T> IdxVec<I, T> {
     }
 }
 
-impl<I: Idx, T> Index<I> for IdxVec<I, T> {
+impl<I: Idx, T> Index<I> for IndexVec<I, T> {
     type Output = T;
 
     #[inline]
@@ -146,28 +146,28 @@ impl<I: Idx, T> Index<I> for IdxVec<I, T> {
     }
 }
 
-impl<I: Idx, T> IndexMut<I> for IdxVec<I, T> {
+impl<I: Idx, T> IndexMut<I> for IndexVec<I, T> {
     #[inline]
     fn index_mut(&mut self, index: I) -> &mut T {
         &mut self.raw[index.index()]
     }
 }
 
-impl<I: Idx, T> Extend<T> for IdxVec<I, T> {
+impl<I: Idx, T> Extend<T> for IndexVec<I, T> {
     #[inline]
     fn extend<J: IntoIterator<Item = T>>(&mut self, iter: J) {
         self.raw.extend(iter);
     }
 }
 
-impl<I: Idx, T> FromIterator<T> for IdxVec<I, T> {
+impl<I: Idx, T> FromIterator<T> for IndexVec<I, T> {
     #[inline]
     fn from_iter<J>(iter: J) -> Self where J: IntoIterator<Item=T> {
-        IdxVec { raw: FromIterator::from_iter(iter), _marker: PhantomData }
+        IndexVec { raw: FromIterator::from_iter(iter), _marker: PhantomData }
     }
 }
 
-impl<I: Idx, T> IntoIterator for IdxVec<I, T> {
+impl<I: Idx, T> IntoIterator for IndexVec<I, T> {
     type Item = T;
     type IntoIter = vec::IntoIter<T>;
 
@@ -178,7 +178,7 @@ impl<I: Idx, T> IntoIterator for IdxVec<I, T> {
 
 }
 
-impl<'a, I: Idx, T> IntoIterator for &'a IdxVec<I, T> {
+impl<'a, I: Idx, T> IntoIterator for &'a IndexVec<I, T> {
     type Item = &'a T;
     type IntoIter = slice::Iter<'a, T>;
 
@@ -188,7 +188,7 @@ impl<'a, I: Idx, T> IntoIterator for &'a IdxVec<I, T> {
     }
 }
 
-impl<'a, I: Idx, T> IntoIterator for &'a mut IdxVec<I, T> {
+impl<'a, I: Idx, T> IntoIterator for &'a mut IndexVec<I, T> {
     type Item = &'a mut T;
     type IntoIter = slice::IterMut<'a, T>;
 

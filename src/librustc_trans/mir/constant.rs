@@ -22,7 +22,7 @@ use rustc::traits;
 use rustc::ty::{self, Ty, TyCtxt, TypeFoldable};
 use rustc::ty::cast::{CastTy, IntTy};
 use rustc::ty::subst::Substs;
-use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use {abi, adt, base, Disr};
 use callee::Callee;
 use common::{self, BlockAndBuilder, CrateContext, const_get_elt, val_ty};
@@ -204,13 +204,13 @@ struct MirConstContext<'a, 'tcx: 'a> {
     substs: &'tcx Substs<'tcx>,
 
     /// Arguments passed to a const fn.
-    args: IdxVec<mir::Arg, Const<'tcx>>,
+    args: IndexVec<mir::Arg, Const<'tcx>>,
 
     /// Variable values - specifically, argument bindings of a const fn.
-    vars: IdxVec<mir::Var, Option<Const<'tcx>>>,
+    vars: IndexVec<mir::Var, Option<Const<'tcx>>>,
 
     /// Temp values.
-    temps: IdxVec<mir::Temp, Option<Const<'tcx>>>,
+    temps: IndexVec<mir::Temp, Option<Const<'tcx>>>,
 
     /// Value assigned to Return, which is the resulting constant.
     return_value: Option<Const<'tcx>>
@@ -221,22 +221,22 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
     fn new(ccx: &'a CrateContext<'a, 'tcx>,
            mir: &'a mir::Mir<'tcx>,
            substs: &'tcx Substs<'tcx>,
-           args: IdxVec<mir::Arg, Const<'tcx>>)
+           args: IndexVec<mir::Arg, Const<'tcx>>)
            -> MirConstContext<'a, 'tcx> {
         MirConstContext {
             ccx: ccx,
             mir: mir,
             substs: substs,
             args: args,
-            vars: IdxVec::from_elem(None, &mir.var_decls),
-            temps: IdxVec::from_elem(None, &mir.temp_decls),
+            vars: IndexVec::from_elem(None, &mir.var_decls),
+            temps: IndexVec::from_elem(None, &mir.temp_decls),
             return_value: None
         }
     }
 
     fn trans_def(ccx: &'a CrateContext<'a, 'tcx>,
                  mut instance: Instance<'tcx>,
-                 args: IdxVec<mir::Arg, Const<'tcx>>)
+                 args: IndexVec<mir::Arg, Const<'tcx>>)
                  -> Result<Const<'tcx>, ConstEvalFailure> {
         // Try to resolve associated constants.
         if instance.substs.self_ty().is_some() {
@@ -342,7 +342,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
                                        func, fn_ty)
                     };
 
-                    let mut const_args = IdxVec::with_capacity(args.len());
+                    let mut const_args = IndexVec::with_capacity(args.len());
                     for arg in args {
                         match self.const_operand(arg, span) {
                             Ok(arg) => { const_args.push(arg); },
@@ -489,11 +489,11 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
 
                         let substs = self.monomorphize(&substs);
                         let instance = Instance::new(def_id, substs);
-                        MirConstContext::trans_def(self.ccx, instance, IdxVec::new())
+                        MirConstContext::trans_def(self.ccx, instance, IndexVec::new())
                     }
                     mir::Literal::Promoted { index } => {
                         let mir = &self.mir.promoted[index];
-                        MirConstContext::new(self.ccx, mir, self.substs, IdxVec::new()).trans()
+                        MirConstContext::new(self.ccx, mir, self.substs, IndexVec::new()).trans()
                     }
                     mir::Literal::Value { value } => {
                         Ok(Const::from_constval(self.ccx, value, ty))
@@ -914,12 +914,12 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
 
                 let substs = bcx.monomorphize(&substs);
                 let instance = Instance::new(def_id, substs);
-                MirConstContext::trans_def(bcx.ccx(), instance, IdxVec::new())
+                MirConstContext::trans_def(bcx.ccx(), instance, IndexVec::new())
             }
             mir::Literal::Promoted { index } => {
                 let mir = &self.mir.promoted[index];
                 MirConstContext::new(bcx.ccx(), mir, bcx.fcx().param_substs,
-                                     IdxVec::new()).trans()
+                                     IndexVec::new()).trans()
             }
             mir::Literal::Value { value } => {
                 Ok(Const::from_constval(bcx.ccx(), value, ty))
@@ -946,5 +946,5 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
 pub fn trans_static_initializer(ccx: &CrateContext, def_id: DefId)
                                 -> Result<ValueRef, ConstEvalFailure> {
     let instance = Instance::mono(ccx.shared(), def_id);
-    MirConstContext::trans_def(ccx, instance, IdxVec::new()).map(|c| c.llval)
+    MirConstContext::trans_def(ccx, instance, IndexVec::new()).map(|c| c.llval)
 }

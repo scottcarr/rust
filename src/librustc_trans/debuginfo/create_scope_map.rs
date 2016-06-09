@@ -26,7 +26,7 @@ use syntax::codemap::{Span, Pos};
 use syntax::{ast, codemap};
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc::hir::{self, PatKind};
 
 // This procedure builds the *scope map* for a given function, which maps any
@@ -70,9 +70,9 @@ pub fn create_scope_map(cx: &CrateContext,
 
 /// Produce DIScope DIEs for each MIR Scope which has variables defined in it.
 /// If debuginfo is disabled, the returned vector is empty.
-pub fn create_mir_scopes(fcx: &FunctionContext) -> IdxVec<ScopeId, DIScope> {
+pub fn create_mir_scopes(fcx: &FunctionContext) -> IndexVec<ScopeId, DIScope> {
     let mir = fcx.mir.clone().expect("create_mir_scopes: missing MIR for fn");
-    let mut scopes = IdxVec::from_elem(ptr::null_mut(), &mir.scopes);
+    let mut scopes = IndexVec::from_elem(ptr::null_mut(), &mir.scopes);
 
     let fn_metadata = match fcx.debug_context {
         FunctionDebugContext::RegularContext(box ref data) => data.fn_metadata,
@@ -102,7 +102,7 @@ fn make_mir_scope(ccx: &CrateContext,
                   has_variables: &BitVector,
                   fn_metadata: DISubprogram,
                   scope: ScopeId,
-                  scopes: &mut IdxVec<ScopeId, DIScope>) {
+                  scopes: &mut IndexVec<ScopeId, DIScope>) {
     if !scopes[scope].is_null() {
         return;
     }

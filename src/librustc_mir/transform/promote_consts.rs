@@ -30,7 +30,7 @@ use syntax::codemap::Span;
 use build::Location;
 use traversal::ReversePostorder;
 
-use rustc_data_structures::indexed_vec::{IdxVec, Idx};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 use std::mem;
 
@@ -76,7 +76,7 @@ pub enum Candidate {
 }
 
 struct TempCollector {
-    temps: IdxVec<Temp, TempState>,
+    temps: IndexVec<Temp, TempState>,
     location: Location,
     span: Span
 }
@@ -138,9 +138,9 @@ impl<'tcx> Visitor<'tcx> for TempCollector {
     }
 }
 
-pub fn collect_temps(mir: &Mir, rpo: &mut ReversePostorder) -> IdxVec<Temp, TempState> {
+pub fn collect_temps(mir: &Mir, rpo: &mut ReversePostorder) -> IndexVec<Temp, TempState> {
     let mut collector = TempCollector {
-        temps: IdxVec::from_elem(TempState::Undefined, &mir.temp_decls),
+        temps: IndexVec::from_elem(TempState::Undefined, &mir.temp_decls),
         location: Location {
             block: START_BLOCK,
             statement_index: 0
@@ -156,7 +156,7 @@ pub fn collect_temps(mir: &Mir, rpo: &mut ReversePostorder) -> IdxVec<Temp, Temp
 struct Promoter<'a, 'tcx: 'a> {
     source: &'a mut Mir<'tcx>,
     promoted: Mir<'tcx>,
-    temps: &'a mut IdxVec<Temp, TempState>,
+    temps: &'a mut IndexVec<Temp, TempState>,
 
     /// If true, all nested temps are also kept in the
     /// source MIR, not moved to the promoted MIR.
@@ -331,7 +331,7 @@ impl<'a, 'tcx> MutVisitor<'tcx> for Promoter<'a, 'tcx> {
 
 pub fn promote_candidates<'a, 'tcx>(mir: &mut Mir<'tcx>,
                                     tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                                    mut temps: IdxVec<Temp, TempState>,
+                                    mut temps: IndexVec<Temp, TempState>,
                                     candidates: Vec<Candidate>) {
     // Visit candidates in reverse, in case they're nested.
     for candidate in candidates.into_iter().rev() {
@@ -365,16 +365,16 @@ pub fn promote_candidates<'a, 'tcx>(mir: &mut Mir<'tcx>,
         let mut promoter = Promoter {
             source: mir,
             promoted: Mir::new(
-                IdxVec::new(),
+                IndexVec::new(),
                 Some(ScopeData {
                     span: span,
                     parent_scope: None
                 }).into_iter().collect(),
-                IdxVec::new(),
+                IndexVec::new(),
                 ty::FnConverging(ty),
-                IdxVec::new(),
-                IdxVec::new(),
-                IdxVec::new(),
+                IndexVec::new(),
+                IndexVec::new(),
+                IndexVec::new(),
                 vec![],
                 span
             ),

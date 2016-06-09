@@ -11,9 +11,9 @@
 use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
-use rustc_data_structures::indexed_vec::{IdxVec, Idx};
 use rustc_data_structures::graph_algorithms::NodeIndex;
 use rustc_data_structures::graph_algorithms::dominators::Dominators;
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -61,32 +61,32 @@ macro_rules! newtype_index {
 pub struct Mir<'tcx> {
     /// List of basic blocks. References to basic block use a newtyped index type `BasicBlock`
     /// that indexes into this vector.
-    basic_blocks: IdxVec<BasicBlock, BasicBlockData<'tcx>>,
+    basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
 
     /// List of lexical scopes; these are referenced by statements and
     /// used (eventually) for debuginfo. Indexed by a `ScopeId`.
-    pub scopes: IdxVec<ScopeId, ScopeData>,
+    pub scopes: IndexVec<ScopeId, ScopeData>,
 
     /// Rvalues promoted from this function, such as borrows of constants.
     /// Each of them is the Mir of a constant with the fn's type parameters
     /// in scope, but no vars or args and a separate set of temps.
-    pub promoted: IdxVec<Promoted, Mir<'tcx>>,
+    pub promoted: IndexVec<Promoted, Mir<'tcx>>,
 
     /// Return type of the function.
     pub return_ty: FnOutput<'tcx>,
 
     /// Variables: these are stack slots corresponding to user variables. They may be
     /// assigned many times.
-    pub var_decls: IdxVec<Var, VarDecl<'tcx>>,
+    pub var_decls: IndexVec<Var, VarDecl<'tcx>>,
 
     /// Args: these are stack slots corresponding to the input arguments.
-    pub arg_decls: IdxVec<Arg, ArgDecl<'tcx>>,
+    pub arg_decls: IndexVec<Arg, ArgDecl<'tcx>>,
 
     /// Temp declarations: stack slots that for temporaries created by
     /// the compiler. These are assigned once, but they are not SSA
     /// values in that it is possible to borrow them and mutate them
     /// through the resulting reference.
-    pub temp_decls: IdxVec<Temp, TempDecl<'tcx>>,
+    pub temp_decls: IndexVec<Temp, TempDecl<'tcx>>,
 
     /// Names and capture modes of all the closure upvars, assuming
     /// the first argument is either the closure or a reference to it.
@@ -103,13 +103,13 @@ pub struct Mir<'tcx> {
 pub const START_BLOCK: BasicBlock = BasicBlock(0);
 
 impl<'tcx> Mir<'tcx> {
-    pub fn new(basic_blocks: IdxVec<BasicBlock, BasicBlockData<'tcx>>,
-               scopes: IdxVec<ScopeId, ScopeData>,
-               promoted: IdxVec<Promoted, Mir<'tcx>>,
+    pub fn new(basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+               scopes: IndexVec<ScopeId, ScopeData>,
+               promoted: IndexVec<Promoted, Mir<'tcx>>,
                return_ty: FnOutput<'tcx>,
-               var_decls: IdxVec<Var, VarDecl<'tcx>>,
-               arg_decls: IdxVec<Arg, ArgDecl<'tcx>>,
-               temp_decls: IdxVec<Temp, TempDecl<'tcx>>,
+               var_decls: IndexVec<Var, VarDecl<'tcx>>,
+               arg_decls: IndexVec<Arg, ArgDecl<'tcx>>,
+               temp_decls: IndexVec<Temp, TempDecl<'tcx>>,
                upvar_decls: Vec<UpvarDecl>,
                span: Span) -> Self
     {
@@ -128,18 +128,18 @@ impl<'tcx> Mir<'tcx> {
     }
 
     #[inline]
-    pub fn basic_blocks(&self) -> &IdxVec<BasicBlock, BasicBlockData<'tcx>> {
+    pub fn basic_blocks(&self) -> &IndexVec<BasicBlock, BasicBlockData<'tcx>> {
         &self.basic_blocks
     }
 
     #[inline]
-    pub fn basic_blocks_mut(&mut self) -> &mut IdxVec<BasicBlock, BasicBlockData<'tcx>> {
+    pub fn basic_blocks_mut(&mut self) -> &mut IndexVec<BasicBlock, BasicBlockData<'tcx>> {
         self.cache.invalidate();
         &mut self.basic_blocks
     }
 
     #[inline]
-    pub fn predecessors(&self) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
+    pub fn predecessors(&self) -> Ref<IndexVec<BasicBlock, Vec<BasicBlock>>> {
         self.cache.predecessors(self)
     }
 

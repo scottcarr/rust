@@ -9,8 +9,9 @@
 // except according to those terms.
 
 use std::cell::{Ref, RefCell};
-use rustc_data_structures::indexed_vec::IdxVec;
 use rustc_data_structures::graph_algorithms::dominators::{dominators,Dominators};
+use rustc_data_structures::indexed_vec::IndexVec;
+
 use mir::repr::{Mir, BasicBlock};
 use mir::mir_cfg::MirCfg;
 
@@ -51,7 +52,7 @@ impl Cache {
         *self.dominators.borrow_mut() = None;
     }
 
-    pub fn predecessors(&self, mir: &Mir) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
+    pub fn predecessors(&self, mir: &Mir) -> Ref<IndexVec<BasicBlock, Vec<BasicBlock>>> {
         if self.predecessors.borrow().is_none() {
             *self.predecessors.borrow_mut() = Some(calculate_predecessors(mir));
         }
@@ -76,8 +77,8 @@ impl Cache {
     }
 }
 
-fn calculate_predecessors(mir: &Mir) -> IdxVec<BasicBlock, Vec<BasicBlock>> {
-    let mut result = IdxVec::from_elem(vec![], mir.basic_blocks());
+fn calculate_predecessors(mir: &Mir) -> IndexVec<BasicBlock, Vec<BasicBlock>> {
+    let mut result = IndexVec::from_elem(vec![], mir.basic_blocks());
     for (bb, data) in mir.basic_blocks().iter_enumerated() {
         if let Some(ref term) = data.terminator {
             for &tgt in term.successors().iter() {

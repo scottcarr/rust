@@ -30,7 +30,7 @@ use std::rc::Rc;
 use basic_block::BasicBlock;
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{IdxVec, Idx};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 pub use self::constant::trans_static_initializer;
 
@@ -72,20 +72,20 @@ pub struct MirContext<'bcx, 'tcx:'bcx> {
     llpersonalityslot: Option<ValueRef>,
 
     /// A `Block` for each MIR `BasicBlock`
-    blocks: IdxVec<mir::BasicBlock, Block<'bcx, 'tcx>>,
+    blocks: IndexVec<mir::BasicBlock, Block<'bcx, 'tcx>>,
 
     /// The funclet status of each basic block
-    cleanup_kinds: IdxVec<mir::BasicBlock, analyze::CleanupKind>,
+    cleanup_kinds: IndexVec<mir::BasicBlock, analyze::CleanupKind>,
 
     /// This stores the landing-pad block for a given BB, computed lazily on GNU
     /// and eagerly on MSVC.
-    landing_pads: IdxVec<mir::BasicBlock, Option<Block<'bcx, 'tcx>>>,
+    landing_pads: IndexVec<mir::BasicBlock, Option<Block<'bcx, 'tcx>>>,
 
     /// Cached unreachable block
     unreachable_block: Option<Block<'bcx, 'tcx>>,
 
     /// An LLVM alloca for each MIR `VarDecl`
-    vars: IdxVec<mir::Var, LvalueRef<'tcx>>,
+    vars: IndexVec<mir::Var, LvalueRef<'tcx>>,
 
     /// The location where each MIR `TempDecl` is stored. This is
     /// usually an `LvalueRef` representing an alloca, but not always:
@@ -102,15 +102,15 @@ pub struct MirContext<'bcx, 'tcx:'bcx> {
     ///
     /// Avoiding allocs can also be important for certain intrinsics,
     /// notably `expect`.
-    temps: IdxVec<mir::Temp, TempRef<'tcx>>,
+    temps: IndexVec<mir::Temp, TempRef<'tcx>>,
 
     /// The arguments to the function; as args are lvalues, these are
     /// always indirect, though we try to avoid creating an alloca
     /// when we can (and just reuse the pointer the caller provided).
-    args: IdxVec<mir::Arg, LvalueRef<'tcx>>,
+    args: IndexVec<mir::Arg, LvalueRef<'tcx>>,
 
     /// Debug information for MIR scopes.
-    scopes: IdxVec<mir::ScopeId, DIScope>
+    scopes: IndexVec<mir::ScopeId, DIScope>
 }
 
 enum TempRef<'tcx> {
@@ -192,7 +192,7 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
                               .collect();
 
     // Allocate a `Block` for every basic block
-    let block_bcxs: IdxVec<mir::BasicBlock, Block<'blk,'tcx>> =
+    let block_bcxs: IndexVec<mir::BasicBlock, Block<'blk,'tcx>> =
         mir.basic_blocks().indices().map(|bb| {
             if bb == mir::START_BLOCK {
                 fcx.new_block("start", None)
@@ -217,7 +217,7 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
         blocks: block_bcxs,
         unreachable_block: None,
         cleanup_kinds: cleanup_kinds,
-        landing_pads: IdxVec::from_elem(None, mir.basic_blocks()),
+        landing_pads: IndexVec::from_elem(None, mir.basic_blocks()),
         vars: vars,
         temps: temps,
         args: args,
@@ -261,8 +261,8 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
 /// indirect.
 fn arg_value_refs<'bcx, 'tcx>(bcx: &BlockAndBuilder<'bcx, 'tcx>,
                               mir: &mir::Mir<'tcx>,
-                              scopes: &IdxVec<mir::ScopeId, DIScope>)
-                              -> IdxVec<mir::Arg, LvalueRef<'tcx>> {
+                              scopes: &IndexVec<mir::ScopeId, DIScope>)
+                              -> IndexVec<mir::Arg, LvalueRef<'tcx>> {
     let fcx = bcx.fcx();
     let tcx = bcx.tcx();
     let mut idx = 0;

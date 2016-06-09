@@ -12,7 +12,7 @@
 use rustc::ty::{FnOutput, TyCtxt};
 use rustc::mir::repr::*;
 use rustc::util::nodemap::FnvHashMap;
-use rustc_data_structures::indexed_vec::{Idx, IdxVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 
 use std::cell::{Cell};
 use std::collections::hash_map::Entry;
@@ -240,9 +240,9 @@ struct MovePathDataBuilder<'a, 'tcx: 'a> {
 /// Tables mapping from an l-value to its MovePathIndex.
 #[derive(Debug)]
 pub struct MovePathLookup<'tcx> {
-    vars: IdxVec<Var, Option<MovePathIndex>>,
-    temps: IdxVec<Temp, Option<MovePathIndex>>,
-    args: IdxVec<Arg, Option<MovePathIndex>>,
+    vars: IndexVec<Var, Option<MovePathIndex>>,
+    temps: IndexVec<Temp, Option<MovePathIndex>>,
+    args: IndexVec<Arg, Option<MovePathIndex>>,
 
     /// The move path representing the return value is constructed
     /// lazily when we first encounter it in the input MIR.
@@ -297,9 +297,9 @@ impl Lookup<MovePathIndex> {
 impl<'tcx> MovePathLookup<'tcx> {
     fn new(mir: &Mir) -> Self {
         MovePathLookup {
-            vars: IdxVec::from_elem(None, &mir.var_decls),
-            temps: IdxVec::from_elem(None, &mir.temp_decls),
-            args: IdxVec::from_elem(None, &mir.arg_decls),
+            vars: IndexVec::from_elem(None, &mir.var_decls),
+            temps: IndexVec::from_elem(None, &mir.temp_decls),
+            args: IndexVec::from_elem(None, &mir.arg_decls),
             statics: None,
             return_ptr: None,
             projections: vec![],
@@ -313,7 +313,7 @@ impl<'tcx> MovePathLookup<'tcx> {
         i
     }
 
-    fn lookup_or_generate<I: Idx>(vec: &mut IdxVec<I, Option<MovePathIndex>>,
+    fn lookup_or_generate<I: Idx>(vec: &mut IndexVec<I, Option<MovePathIndex>>,
                                   idx: I,
                                   next_index: &mut MovePathIndex)
                                   -> Lookup<MovePathIndex> {

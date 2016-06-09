@@ -15,7 +15,7 @@
 //! diagnostics as to why a constant rvalue wasn't promoted.
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{IdxVec, Idx};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use rustc::hir;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::FnKind;
@@ -142,12 +142,12 @@ struct Qualifier<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     param_env: ty::ParameterEnvironment<'tcx>,
     qualif_map: &'a mut DefIdMap<Qualif>,
     mir_map: Option<&'a MirMap<'tcx>>,
-    temp_qualif: IdxVec<Temp, Option<Qualif>>,
+    temp_qualif: IndexVec<Temp, Option<Qualif>>,
     return_qualif: Option<Qualif>,
     qualif: Qualif,
     const_fn_arg_vars: BitVector,
     location: Location,
-    temp_promotion_state: IdxVec<Temp, TempState>,
+    temp_promotion_state: IndexVec<Temp, TempState>,
     promotion_candidates: Vec<Candidate>
 }
 
@@ -173,7 +173,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
             param_env: param_env,
             qualif_map: qualif_map,
             mir_map: mir_map,
-            temp_qualif: IdxVec::from_elem(None, &mir.temp_decls),
+            temp_qualif: IndexVec::from_elem(None, &mir.temp_decls),
             return_qualif: None,
             qualif: Qualif::empty(),
             const_fn_arg_vars: BitVector::new(mir.var_decls.len()),
@@ -903,9 +903,7 @@ fn qualify_const_item_cached<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
 pub struct QualifyAndPromoteConstants;
 
-impl Pass for QualifyAndPromoteConstants {
-    fn name(&self) -> &str { "qualify-consts" }
-}
+impl Pass for QualifyAndPromoteConstants {}
 
 impl<'tcx> MirMapPass<'tcx> for QualifyAndPromoteConstants {
     fn run_pass<'a>(&mut self,

@@ -77,7 +77,6 @@ impl Idx for ScopeId {
     fn index(self) -> usize {
         self.0 as usize
     }
->>>>>>> 4cfb14503079876214ce0e365bce4bf57dd632de
 }
 
 /// For each scope, we track the extent (from the HIR) and a

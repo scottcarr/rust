@@ -13,7 +13,7 @@ use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
 use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use pretty;
 
 pub struct AddCallGuards;
 

@@ -125,6 +125,7 @@ impl<'tcx> Mir<'tcx> {
             span: span,
             cache: Cache::new()
         }
+    }
 
 
     #[inline]

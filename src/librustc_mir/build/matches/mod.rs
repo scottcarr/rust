@@ -16,7 +16,6 @@
 use build::{BlockAnd, BlockAndExtension, Builder};
 use rustc_data_structures::fnv::FnvHashMap;
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::Idx;
 use rustc::middle::const_val::ConstVal;
 use rustc::ty::{AdtDef, Ty};
 use rustc::mir::repr::*;

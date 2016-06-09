@@ -32,8 +32,6 @@ use build::Location;
 
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
-use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-
 use std::mem;
 
 /// State of a temporary during collection and promotion.

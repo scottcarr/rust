@@ -983,6 +983,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
             passes.push_pass(
                 box mir::transform::simplify_branches::SimplifyBranches::new("initial"));
             passes.push_pass(box mir::transform::simplify_cfg::SimplifyCfg::new("qualify-consts"));
+            passes.push_pass(box mir::transform::cache_test::CacheTest);
             // And run everything.
             passes.run_passes(tcx, &mut mir_map);
         });

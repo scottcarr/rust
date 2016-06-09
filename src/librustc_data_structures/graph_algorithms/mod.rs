@@ -10,10 +10,9 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-pub mod bit_set;
+//pub mod bit_set;
 pub mod dominators;
 pub mod iterate;
-pub mod loop_tree;
 pub mod reachable;
 mod reference;
 pub mod node_vec;

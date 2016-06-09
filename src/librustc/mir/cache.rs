@@ -19,8 +19,8 @@ use rustc_serialize as serialize;
 
 #[derive(Clone)]
 pub struct Cache {
-    predecessors: RefCell<Option<IdxVec<BasicBlock, Vec<BasicBlock>>>>,
-    successors: RefCell<Option<IdxVec<BasicBlock, Vec<BasicBlock>>>>,
+    predecessors: RefCell<Option<IndexVec<BasicBlock, Vec<BasicBlock>>>>,
+    successors: RefCell<Option<IndexVec<BasicBlock, Vec<BasicBlock>>>>,
     dominators: RefCell<Option<Dominators<MirCfg>>>,
 }
 
@@ -60,7 +60,7 @@ impl Cache {
         Ref::map(self.predecessors.borrow(), |p| p.as_ref().unwrap())
     }
 
-    pub fn successors(&self, mir: &Mir) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
+    pub fn successors(&self, mir: &Mir) -> Ref<IndexVec<BasicBlock, Vec<BasicBlock>>> {
         if self.successors.borrow().is_none() {
             *self.successors.borrow_mut() = Some(calculate_successors(mir));
         }
@@ -93,8 +93,8 @@ fn calculate_predecessors(mir: &Mir) -> IndexVec<BasicBlock, Vec<BasicBlock>> {
     result
 }
 
-fn calculate_successors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> IdxVec<BasicBlock, Vec<BasicBlock>> {
-    let mut successors = IdxVec::from_elem(vec![], mir.basic_blocks());
+fn calculate_successors<'a, 'tcx>(mir: &'a Mir<'tcx>) -> IndexVec<BasicBlock, Vec<BasicBlock>> {
+    let mut successors = IndexVec::from_elem(vec![], mir.basic_blocks());
     for (bb, data) in mir.basic_blocks().iter_enumerated() {
         if let Some(ref term) = data.terminator {
             successors[bb].append(term.successors().to_mut());

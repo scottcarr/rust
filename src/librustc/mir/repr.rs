@@ -144,7 +144,7 @@ impl<'tcx> Mir<'tcx> {
     }
 
     #[inline]
-    pub fn successors(&self) -> Ref<IdxVec<BasicBlock, Vec<BasicBlock>>> {
+    pub fn successors(&self) -> Ref<IndexVec<BasicBlock, Vec<BasicBlock>>> {
         self.cache.successors(self)
     }
 

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use std::{iter, slice};
-use rustc_data_structures::indexed_vec::IdxVec;
+use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors};
 use mir::repr::{Mir, BasicBlock, START_BLOCK};
 use mir::cache::Cache;
@@ -27,8 +27,8 @@ impl MirCfg {
 
 #[derive(Clone, Debug)]
 pub struct MirCfg {
-    predecessors: IdxVec<BasicBlock,Vec<BasicBlock>>,
-    successors: IdxVec<BasicBlock,Vec<BasicBlock>>,
+    predecessors: IndexVec<BasicBlock,Vec<BasicBlock>>,
+    successors: IndexVec<BasicBlock,Vec<BasicBlock>>,
     start_node: BasicBlock,
     n_nodes: usize,
 }

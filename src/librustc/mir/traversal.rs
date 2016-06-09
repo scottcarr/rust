@@ -13,7 +13,7 @@ use std::vec;
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::indexed_vec::Idx;
 
-use rustc::mir::repr::*;
+use super::repr::*;
 
 /// Preorder traversal of a graph.
 ///

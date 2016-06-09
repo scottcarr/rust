@@ -12,7 +12,6 @@ use super::gather_moves::Location;
 use rustc::ty::Ty;
 use rustc::mir::repr::*;
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-use syntax::codemap::Span;
 
 /// This struct represents a patch to MIR, which can add
 /// new statements and basic blocks and patch over block
@@ -58,8 +57,10 @@ impl<'tcx> MirPatch<'tcx> {
             result.new_block(BasicBlockData {
                 statements: vec![],
                 terminator: Some(Terminator {
-                    span: mir.span,
-                    scope: TOPMOST_SCOPE,
+                    source_info: SourceInfo {
+                        span: mir.span,
+                        scope: ARGUMENT_VISIBILITY_SCOPE
+                    },
                     kind: TerminatorKind::Resume
                 }),
                 is_cleanup: true
@@ -149,29 +150,30 @@ impl<'tcx> MirPatch<'tcx> {
             debug!("MirPatch: adding statement {:?} at loc {:?}+{}",
                    stmt, loc, delta);
             loc.index += delta;
-            let (span, scope) = Self::context_for_index(&mir[loc.block], loc);
+            let source_info = Self::source_info_for_index(
+                &mir[loc.block], loc
+            );
             mir[loc.block].statements.insert(
                 loc.index, Statement {
-                    span: span,
-                    scope: scope,
+                    source_info: source_info,
                     kind: stmt
                 });
             delta += 1;
         }
     }
 
-    pub fn context_for_index(data: &BasicBlockData, loc: Location) -> (Span, ScopeId) {
+    pub fn source_info_for_index(data: &BasicBlockData, loc: Location) -> SourceInfo {
         match data.statements.get(loc.index) {
-            Some(stmt) => (stmt.span, stmt.scope),
-            None => (data.terminator().span, data.terminator().scope)
+            Some(stmt) => stmt.source_info,
+            None => data.terminator().source_info
         }
     }
 
-    pub fn context_for_location(&self, mir: &Mir, loc: Location) -> (Span, ScopeId) {
+    pub fn source_info_for_location(&self, mir: &Mir, loc: Location) -> SourceInfo {
         let data = match loc.block.index().checked_sub(mir.basic_blocks().len()) {
             Some(new) => &self.new_blocks[new],
             None => &mir[loc.block]
         };
-        Self::context_for_index(data, loc)
+        Self::source_info_for_index(data, loc)
     }
 }

@@ -12,11 +12,11 @@
 //! which do not.
 
 use rustc_data_structures::bitvec::BitVector;
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc::mir::repr as mir;
 use rustc::mir::repr::TerminatorKind;
 use rustc::mir::visit::{Visitor, LvalueContext};
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
-use rustc_mir::traversal;
+use rustc::mir::traversal;
 use common::{self, Block, BlockAndBuilder};
 use super::rvalue;
 

@@ -16,7 +16,7 @@ use rustc::mir::repr as mir;
 use rustc::mir::tcx::LvalueTy;
 use session::config::FullDebugInfo;
 use base;
-use common::{self, Block, BlockAndBuilder, CrateContext, FunctionContext};
+use common::{self, Block, BlockAndBuilder, CrateContext, FunctionContext, C_null};
 use debuginfo::{self, declare_local, DebugLoc, VariableAccess, VariableKind};
 use machine;
 use type_of;
@@ -35,7 +35,7 @@ use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 pub use self::constant::trans_static_initializer;
 
 use self::lvalue::{LvalueRef, get_dataptr, get_meta};
-use rustc_mir::traversal;
+use rustc::mir::traversal;
 
 use self::operand::{OperandRef, OperandValue};
 
@@ -110,7 +110,13 @@ pub struct MirContext<'bcx, 'tcx:'bcx> {
     args: IndexVec<mir::Arg, LvalueRef<'tcx>>,
 
     /// Debug information for MIR scopes.
-    scopes: IndexVec<mir::ScopeId, DIScope>
+    scopes: IndexVec<mir::VisibilityScope, DIScope>
+}
+
+impl<'blk, 'tcx> MirContext<'blk, 'tcx> {
+    pub fn debug_loc(&self, source_info: mir::SourceInfo) -> DebugLoc {
+        DebugLoc::ScopeAt(self.scopes[source_info.scope], source_info.span)
+    }
 }
 
 enum TempRef<'tcx> {
@@ -125,11 +131,12 @@ impl<'tcx> TempRef<'tcx> {
             // Zero-size temporaries aren't always initialized, which
             // doesn't matter because they don't contain data, but
             // we need something in the operand.
-            let nil = common::C_nil(ccx);
+            let llty = type_of::type_of(ccx, ty);
             let val = if common::type_is_imm_pair(ccx, ty) {
-                OperandValue::Pair(nil, nil)
+                let fields = llty.field_types();
+                OperandValue::Pair(C_null(fields[0]), C_null(fields[1]))
             } else {
-                OperandValue::Immediate(nil)
+                OperandValue::Immediate(C_null(llty))
             };
             let op = OperandRef {
                 val: val,
@@ -165,12 +172,12 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
                             .map(|(mty, decl)| {
         let lvalue = LvalueRef::alloca(&bcx, mty, &decl.name.as_str());
 
-        let scope = scopes[decl.scope];
+        let scope = scopes[decl.source_info.scope];
         if !scope.is_null() && bcx.sess().opts.debuginfo == FullDebugInfo {
             bcx.with_block(|bcx| {
                 declare_local(bcx, decl.name, mty, scope,
                               VariableAccess::DirectVariable { alloca: lvalue.llval },
-                              VariableKind::LocalVariable, decl.span);
+                              VariableKind::LocalVariable, decl.source_info.span);
             });
         }
 
@@ -261,25 +268,19 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
 /// indirect.
 fn arg_value_refs<'bcx, 'tcx>(bcx: &BlockAndBuilder<'bcx, 'tcx>,
                               mir: &mir::Mir<'tcx>,
-                              scopes: &IndexVec<mir::ScopeId, DIScope>)
+                              scopes: &IndexVec<mir::VisibilityScope, DIScope>)
                               -> IndexVec<mir::Arg, LvalueRef<'tcx>> {
     let fcx = bcx.fcx();
     let tcx = bcx.tcx();
     let mut idx = 0;
     let mut llarg_idx = fcx.fn_ty.ret.is_indirect() as usize;
 
-    // Get the argument scope assuming ScopeId(0) has no parent.
-    let arg_scope = if mir.scopes.is_empty() {
-        None
+    // Get the argument scope, if it exists and if we need it.
+    let arg_scope = scopes[mir::ARGUMENT_VISIBILITY_SCOPE];
+    let arg_scope = if !arg_scope.is_null() && bcx.sess().opts.debuginfo == FullDebugInfo {
+        Some(arg_scope)
     } else {
-        let data = &mir.scopes[mir::TOPMOST_SCOPE];
-        let scope = scopes[mir::TOPMOST_SCOPE];
-        if data.parent_scope.is_none() && !scope.is_null() &&
-           bcx.sess().opts.debuginfo == FullDebugInfo {
-            Some(scope)
-        } else {
-            None
-        }
+        None
     };
 
     mir.arg_decls.iter().enumerate().map(|(arg_index, arg_decl)| {
@@ -348,10 +349,10 @@ fn arg_value_refs<'bcx, 'tcx>(bcx: &BlockAndBuilder<'bcx, 'tcx>,
             llarg_idx += 1;
             llarg
         } else {
+            let lltemp = bcx.with_block(|bcx| {
+                base::alloc_ty(bcx, arg_ty, &format!("arg{}", arg_index))
+            });
             if common::type_is_fat_ptr(tcx, arg_ty) {
-                let lltemp = bcx.with_block(|bcx| {
-                    base::alloc_ty(bcx, arg_ty, &format!("arg{}", arg_index))
-                });
                 // we pass fat pointers as two words, but we want to
                 // represent them internally as a pointer to two words,
                 // so make an alloca to store them in.
@@ -359,17 +360,12 @@ fn arg_value_refs<'bcx, 'tcx>(bcx: &BlockAndBuilder<'bcx, 'tcx>,
                 idx += 1;
                 arg.store_fn_arg(bcx, &mut llarg_idx, get_dataptr(bcx, lltemp));
                 meta.store_fn_arg(bcx, &mut llarg_idx, get_meta(bcx, lltemp));
-                lltemp
             } else  {
-                // otherwise, arg is passed by value, so store it into a temporary.
-                let llarg_ty = arg.cast.unwrap_or(arg.memory_ty(bcx.ccx()));
-                let lltemp = bcx.with_block(|bcx| {
-                    base::alloca(bcx, llarg_ty, &format!("arg{}", arg_index))
-                });
+                // otherwise, arg is passed by value, so make a
+                // temporary and store it there
                 arg.store_fn_arg(bcx, &mut llarg_idx, lltemp);
-                // And coerce the temporary into the type we expect.
-                bcx.pointercast(lltemp, arg.memory_ty(bcx.ccx()).ptr_to())
             }
+            lltemp
         };
         bcx.with_block(|bcx| arg_scope.map(|scope| {
             // Is this a regular argument?

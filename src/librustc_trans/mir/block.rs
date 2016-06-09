@@ -19,11 +19,11 @@ use base;
 use build;
 use callee::{Callee, CalleeData, Fn, Intrinsic, NamedTupleConstructor, Virtual};
 use common::{self, Block, BlockAndBuilder, LandingPad};
-use common::{C_bool, C_str_slice, C_struct, C_u32, C_uint, C_undef};
+use common::{C_bool, C_str_slice, C_struct, C_u32, C_undef};
 use consts;
 use debuginfo::DebugLoc;
 use Disr;
-use machine::{llalign_of_min, llbitsize_of_real, llsize_of_store};
+use machine::{llalign_of_min, llbitsize_of_real};
 use meth;
 use type_of;
 use glue;
@@ -38,8 +38,6 @@ use super::constant::Const;
 use super::lvalue::{LvalueRef, load_fat_ptr};
 use super::operand::OperandRef;
 use super::operand::OperandValue::*;
-
-use std::cmp;
 
 impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
     pub fn trans_block(&mut self, bb: mir::BasicBlock) {
@@ -108,8 +106,8 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         let terminator = data.terminator();
         debug!("trans_block: terminator: {:?}", terminator);
 
-        let debug_loc = DebugLoc::ScopeAt(self.scopes[terminator.scope],
-                                          terminator.span);
+        let span = terminator.source_info.span;
+        let debug_loc = self.debug_loc(terminator.source_info);
         debug_loc.apply_to_bcx(&bcx);
         debug_loc.apply(bcx.fcx());
         match terminator.kind {
@@ -251,7 +249,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 bcx = panic_block.build();
 
                 // Get the location information.
-                let loc = bcx.sess().codemap().lookup_char_pos(terminator.span.lo);
+                let loc = bcx.sess().codemap().lookup_char_pos(span.lo);
                 let filename = token::intern_and_get_ident(&loc.file.name);
                 let filename = C_str_slice(bcx.ccx(), filename);
                 let line = C_u32(bcx.ccx(), loc.line as u32);
@@ -302,15 +300,14 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 // is also constant, then we can produce a warning.
                 if const_cond == Some(!expected) {
                     if let Some(err) = const_err {
-                        let _ = consts::const_err(bcx.ccx(),
-                                                  terminator.span,
+                        let _ = consts::const_err(bcx.ccx(), span,
                                                   Err::<(), _>(err),
                                                   consts::TrueConst::No);
                     }
                 }
 
                 // Obtain the panic entry point.
-                let def_id = common::langcall(bcx.tcx(), Some(terminator.span), "", lang_item);
+                let def_id = common::langcall(bcx.tcx(), Some(span), "", lang_item);
                 let callee = Callee::def(bcx.ccx(), def_id,
                     bcx.ccx().empty_substs_for_def_id(def_id));
                 let llfn = callee.reify(bcx.ccx()).val;
@@ -423,8 +420,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                     if is_shuffle && idx == 2 {
                         match *arg {
                             mir::Operand::Consume(_) => {
-                                span_bug!(terminator.span,
-                                          "shuffle indices must be constant");
+                                span_bug!(span, "shuffle indices must be constant");
                             }
                             mir::Operand::Constant(ref constant) => {
                                 let val = self.trans_constant(&bcx, constant);
@@ -779,9 +775,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         }
         let dest = match *dest {
             mir::Lvalue::Temp(idx) => {
-                let lvalue_ty = self.mir.lvalue_ty(bcx.tcx(), dest);
-                let lvalue_ty = bcx.monomorphize(&lvalue_ty);
-                let ret_ty = lvalue_ty.to_ty(bcx.tcx());
+                let ret_ty = self.lvalue_ty(dest);
                 match self.temps[idx] {
                     TempRef::Lvalue(dest) => dest,
                     TempRef::Operand(None) => {
@@ -844,6 +838,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
         self.store_operand(bcx, cast_ptr, val);
     }
 
+
     // Stores the return value of a function call into it's final location.
     fn store_return(&mut self,
                     bcx: &BlockAndBuilder<'bcx, 'tcx>,
@@ -852,77 +847,27 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                     op: OperandRef<'tcx>) {
         use self::ReturnDest::*;
 
-        // Handle the simple cases that don't require casts, first.
-        let llcast_ty = match dest {
-            Nothing => return,
-            Store(dst) => {
-                if let Some(llcast_ty) = ret_ty.cast {
-                    llcast_ty
-                } else {
-                    ret_ty.store(bcx, op.immediate(), dst);
-                    return;
-                }
-            }
+        match dest {
+            Nothing => (),
+            Store(dst) => ret_ty.store(bcx, op.immediate(), dst),
             IndirectOperand(tmp, idx) => {
                 let op = self.trans_load(bcx, tmp, op.ty);
                 self.temps[idx] = TempRef::Operand(Some(op));
-                return;
             }
             DirectOperand(idx) => {
-                if let Some(llcast_ty) = ret_ty.cast {
-                    llcast_ty
+                // If there is a cast, we have to store and reload.
+                let op = if ret_ty.cast.is_some() {
+                    let tmp = bcx.with_block(|bcx| {
+                        base::alloc_ty(bcx, op.ty, "tmp_ret")
+                    });
+                    ret_ty.store(bcx, op.immediate(), tmp);
+                    self.trans_load(bcx, tmp, op.ty)
                 } else {
-                    let op = op.unpack_if_pair(bcx);
-                    self.temps[idx] = TempRef::Operand(Some(op));
-                    return;
-                }
-            }
-        };
-
-        // The actual return type is a struct, but the ABI
-        // adaptation code has cast it into some scalar type.  The
-        // code that follows is the only reliable way I have
-        // found to do a transform like i64 -> {i32,i32}.
-        // Basically we dump the data onto the stack then memcpy it.
-        //
-        // Other approaches I tried:
-        // - Casting rust ret pointer to the foreign type and using Store
-        //   is (a) unsafe if size of foreign type > size of rust type and
-        //   (b) runs afoul of strict aliasing rules, yielding invalid
-        //   assembly under -O (specifically, the store gets removed).
-        // - Truncating foreign type to correct integral type and then
-        //   bitcasting to the struct type yields invalid cast errors.
-
-        // We instead thus allocate some scratch space...
-        let llscratch = bcx.with_block(|bcx| {
-            let alloca = base::alloca(bcx, llcast_ty, "fn_ret_cast");
-            base::call_lifetime_start(bcx, alloca);
-            alloca
-        });
-
-        // ...where we first store the value...
-        bcx.store(op.immediate(), llscratch);
-
-        let ccx = bcx.ccx();
-        match dest {
-            Store(dst) => {
-                // ...and then memcpy it to the intended destination.
-                base::call_memcpy(bcx,
-                                  bcx.pointercast(dst, Type::i8p(ccx)),
-                                  bcx.pointercast(llscratch, Type::i8p(ccx)),
-                                  C_uint(ccx, llsize_of_store(ccx, ret_ty.original_ty)),
-                                  cmp::min(llalign_of_min(ccx, ret_ty.original_ty),
-                                           llalign_of_min(ccx, llcast_ty)) as u32);
-            }
-            DirectOperand(idx) => {
-                let llptr = bcx.pointercast(llscratch, ret_ty.original_ty.ptr_to());
-                let op = self.trans_load(bcx, llptr, op.ty);
+                    op.unpack_if_pair(bcx)
+                };
                 self.temps[idx] = TempRef::Operand(Some(op));
             }
-            Nothing | IndirectOperand(_, _) => bug!()
         }
-
-        bcx.with_block(|bcx| base::call_lifetime_end(bcx, llscratch));
     }
 }
 

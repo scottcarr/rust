@@ -24,11 +24,13 @@
 
 use rustc::mir::repr::*;
 use rustc::mir::visit::{LvalueContext, MutVisitor, Visitor};
+use rustc::mir::traversal::ReversePostorder;
 use rustc::ty::{self, TyCtxt};
 use syntax::codemap::Span;
 
 use build::Location;
-use traversal::ReversePostorder;
+
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
@@ -119,16 +121,14 @@ impl<'tcx> Visitor<'tcx> for TempCollector {
         }
     }
 
-    fn visit_statement(&mut self, bb: BasicBlock, statement: &Statement<'tcx>) {
-        assert_eq!(self.location.block, bb);
-        self.span = statement.span;
-        self.super_statement(bb, statement);
-        self.location.statement_index += 1;
+    fn visit_source_info(&mut self, source_info: &SourceInfo) {
+        self.span = source_info.span;
     }
 
-    fn visit_terminator(&mut self, bb: BasicBlock, terminator: &Terminator<'tcx>) {
-        self.span = terminator.span;
-        self.super_terminator(bb, terminator);
+    fn visit_statement(&mut self, bb: BasicBlock, statement: &Statement<'tcx>) {
+        assert_eq!(self.location.block, bb);
+        self.super_statement(bb, statement);
+        self.location.statement_index += 1;
     }
 
     fn visit_basic_block_data(&mut self, bb: BasicBlock, data: &BasicBlockData<'tcx>) {
@@ -169,8 +169,10 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
         self.promoted.basic_blocks_mut().push(BasicBlockData {
             statements: vec![],
             terminator: Some(Terminator {
-                span: span,
-                scope: TOPMOST_SCOPE,
+                source_info: SourceInfo {
+                    span: span,
+                    scope: ARGUMENT_VISIBILITY_SCOPE
+                },
                 kind: TerminatorKind::Return
             }),
             is_cleanup: false
@@ -181,8 +183,10 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
         let last = self.promoted.basic_blocks().last().unwrap();
         let data = &mut self.promoted[last];
         data.statements.push(Statement {
-            span: span,
-            scope: TOPMOST_SCOPE,
+            source_info: SourceInfo {
+                span: span,
+                scope: ARGUMENT_VISIBILITY_SCOPE
+            },
             kind: StatementKind::Assign(dest, rvalue)
         });
     }
@@ -215,7 +219,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
         // First, take the Rvalue or Call out of the source MIR,
         // or duplicate it, depending on keep_original.
         let (mut rvalue, mut call) = (None, None);
-        let span = if stmt_idx < no_stmts {
+        let source_info = if stmt_idx < no_stmts {
             let statement = &mut self.source[bb].statements[stmt_idx];
             let StatementKind::Assign(_, ref mut rhs) = statement.kind;
             if self.keep_original {
@@ -224,11 +228,11 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                 let unit = Rvalue::Aggregate(AggregateKind::Tuple, vec![]);
                 rvalue = Some(mem::replace(rhs, unit));
             }
-            statement.span
+            statement.source_info
         } else if self.keep_original {
             let terminator = self.source[bb].terminator().clone();
             call = Some(terminator.kind);
-            terminator.span
+            terminator.source_info
         } else {
             let terminator = self.source[bb].terminator_mut();
             let target = match terminator.kind {
@@ -243,13 +247,13 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                     dest.take().unwrap().1
                 }
                 ref kind => {
-                    span_bug!(terminator.span, "{:?} not promotable", kind);
+                    span_bug!(terminator.source_info.span, "{:?} not promotable", kind);
                 }
             };
             call = Some(mem::replace(&mut terminator.kind, TerminatorKind::Goto {
                 target: target
             }));
-            terminator.span
+            terminator.source_info
         };
 
         // Then, recurse for components in the Rvalue or Call.
@@ -265,7 +269,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
 
         // Inject the Rvalue or Call into the promoted MIR.
         if stmt_idx < no_stmts {
-            self.assign(Lvalue::Temp(new_temp), rvalue.unwrap(), span);
+            self.assign(Lvalue::Temp(new_temp), rvalue.unwrap(), source_info.span);
         } else {
             let last = self.promoted.basic_blocks().last().unwrap();
             let new_target = self.new_block();
@@ -277,7 +281,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                 _ => bug!()
             }
             let terminator = self.promoted[last].terminator_mut();
-            terminator.span = span;
+            terminator.source_info.span = source_info.span;
             terminator.kind = call;
         }
 
@@ -345,7 +349,7 @@ pub fn promote_candidates<'a, 'tcx>(mir: &mut Mir<'tcx>,
                         continue;
                     }
                 }
-                (statement.span, mir.lvalue_ty(tcx, dest).to_ty(tcx))
+                (statement.source_info.span, mir.lvalue_ty(tcx, dest).to_ty(tcx))
             }
             Candidate::ShuffleIndices(bb) => {
                 let terminator = mir[bb].terminator();
@@ -354,11 +358,11 @@ pub fn promote_candidates<'a, 'tcx>(mir: &mut Mir<'tcx>,
                         mir.operand_ty(tcx, &args[2])
                     }
                     _ => {
-                        span_bug!(terminator.span,
+                        span_bug!(terminator.source_info.span,
                                   "expected simd_shuffleN call to promote");
                     }
                 };
-                (terminator.span, ty)
+                (terminator.source_info.span, ty)
             }
         };
 
@@ -366,7 +370,7 @@ pub fn promote_candidates<'a, 'tcx>(mir: &mut Mir<'tcx>,
             source: mir,
             promoted: Mir::new(
                 IndexVec::new(),
-                Some(ScopeData {
+                Some(VisibilityScopeData {
                     span: span,
                     parent_scope: None
                 }).into_iter().collect(),

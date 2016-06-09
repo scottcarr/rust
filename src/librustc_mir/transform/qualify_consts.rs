@@ -25,6 +25,7 @@ use rustc::ty::{self, TyCtxt, Ty};
 use rustc::ty::cast::CastTy;
 use rustc::mir::repr::*;
 use rustc::mir::mir_map::MirMap;
+use rustc::mir::traversal::{self, ReversePostorder};
 use rustc::mir::transform::{Pass, MirMapPass, MirPassHook, MirSource};
 use rustc::mir::visit::{LvalueContext, Visitor};
 use rustc::util::nodemap::DefIdMap;
@@ -36,7 +37,6 @@ use std::collections::hash_map::Entry;
 use std::fmt;
 
 use build::Location;
-use traversal::{self, ReversePostorder};
 
 use super::promote_consts::{self, Candidate, TempState};
 
@@ -379,11 +379,12 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
                             let stmt_idx = location.statement_index;
 
                             // Get the span for the initialization.
-                            if stmt_idx < data.statements.len() {
-                                self.span = data.statements[stmt_idx].span;
+                            let source_info = if stmt_idx < data.statements.len() {
+                                data.statements[stmt_idx].source_info
                             } else {
-                                self.span = data.terminator().span;
-                            }
+                                data.terminator().source_info
+                            };
+                            self.span = source_info.span;
 
                             // Treat this as a statement in the AST.
                             self.statement_like();
@@ -510,6 +511,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
                         }
 
                         ProjectionElem::ConstantIndex {..} |
+                        ProjectionElem::Subslice {..} |
                         ProjectionElem::Downcast(..) => {
                             this.not_const()
                         }
@@ -709,7 +711,6 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
                 }
             }
 
-            Rvalue::Slice {..} |
             Rvalue::InlineAsm {..} => {
                 self.not_const();
             }
@@ -832,7 +833,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
                 // Avoid a generic error for other uses of arguments.
                 if self.qualif.intersects(Qualif::FN_ARGUMENT) {
                     let decl = &self.mir.var_decls[index];
-                    span_err!(self.tcx.sess, decl.span, E0022,
+                    span_err!(self.tcx.sess, decl.source_info.span, E0022,
                               "arguments of constant functions can only \
                                be immutable by-value bindings");
                     return;
@@ -843,16 +844,18 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
         self.assign(dest);
     }
 
+    fn visit_source_info(&mut self, source_info: &SourceInfo) {
+        self.span = source_info.span;
+    }
+
     fn visit_statement(&mut self, bb: BasicBlock, statement: &Statement<'tcx>) {
         assert_eq!(self.location.block, bb);
-        self.span = statement.span;
         self.nest(|this| this.super_statement(bb, statement));
         self.location.statement_index += 1;
     }
 
     fn visit_terminator(&mut self, bb: BasicBlock, terminator: &Terminator<'tcx>) {
         assert_eq!(self.location.block, bb);
-        self.span = terminator.span;
         self.nest(|this| this.super_terminator(bb, terminator));
     }
 

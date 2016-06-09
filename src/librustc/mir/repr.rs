@@ -12,6 +12,7 @@ use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
+use rustc_data_structures::graph_algorithms::NodeIndex;
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -159,6 +160,24 @@ impl<'tcx> IndexMut<BasicBlock> for Mir<'tcx> {
     #[inline]
     fn index_mut(&mut self, index: BasicBlock) -> &mut BasicBlockData<'tcx> {
         &mut self.basic_blocks_mut()[index]
+    }
+}
+
+impl From<usize> for BasicBlock {
+    fn from(n: usize) -> BasicBlock {
+        assert!(n < (u32::MAX as usize));
+        BasicBlock(n as u32)
+    }
+}
+impl Into<usize> for BasicBlock {
+    fn into(self: BasicBlock) -> usize {
+        self.index()
+    }
+}
+
+impl NodeIndex for BasicBlock {
+    fn as_usize(self) -> usize {
+        self.index()
     }
 }
 

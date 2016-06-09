@@ -110,6 +110,7 @@ pub mod mir {
     pub mod transform;
     pub mod traversal;
     pub mod mir_map;
+    pub mod mir_cfg;
 }
 
 pub mod session;

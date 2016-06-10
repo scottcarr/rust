@@ -14,35 +14,30 @@ use std::marker::PhantomData;
 use std::ops::{Index, IndexMut, Range};
 use std::fmt;
 use std::vec;
+use std::hash::Hash;
+use std::fmt::Debug;
 
 use rustc_serialize as serialize;
 
 /// Represents some newtyped `usize` wrapper.
 ///
 /// (purpose: avoid mixing indexes for different bitvector domains.)
-pub trait Idx: Copy + 'static {
-    fn new(usize) -> Self;
-    fn index(self) -> usize;
-}
-
-impl Idx for usize {
-    fn new(idx: usize) -> Self { idx }
-    fn index(self) -> usize { self }
+pub trait NodeIndex: Copy + Debug + Eq + Ord + Hash + Into<usize> + From<usize> + 'static {
 }
 
 #[derive(Clone)]
-pub struct IndexVec<I: Idx, T> {
+pub struct IndexVec<I: NodeIndex, T> {
     pub raw: Vec<T>,
     _marker: PhantomData<Fn(&I)>
 }
 
-impl<I: Idx, T: serialize::Encodable> serialize::Encodable for IndexVec<I, T> {
+impl<I: NodeIndex, T: serialize::Encodable> serialize::Encodable for IndexVec<I, T> {
     fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         serialize::Encodable::encode(&self.raw, s)
     }
 }
 
-impl<I: Idx, T: serialize::Decodable> serialize::Decodable for IndexVec<I, T> {
+impl<I: NodeIndex, T: serialize::Decodable> serialize::Decodable for IndexVec<I, T> {
     fn decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
         serialize::Decodable::decode(d).map(|v| {
             IndexVec { raw: v, _marker: PhantomData }
@@ -50,15 +45,15 @@ impl<I: Idx, T: serialize::Decodable> serialize::Decodable for IndexVec<I, T> {
     }
 }
 
-impl<I: Idx, T: fmt::Debug> fmt::Debug for IndexVec<I, T> {
+impl<I: NodeIndex, T: fmt::Debug> fmt::Debug for IndexVec<I, T> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.raw, fmt)
     }
 }
 
-pub type Enumerated<I, J> = iter::Map<iter::Enumerate<J>, IntoIdx<I>>;
+pub type Enumerated<I, J> = iter::Map<iter::Enumerate<J>, IntoNodeIndex<I>>;
 
-impl<I: Idx, T> IndexVec<I, T> {
+impl<I: NodeIndex, T> IndexVec<I, T> {
     #[inline]
     pub fn new() -> Self {
         IndexVec { raw: Vec::new(), _marker: PhantomData }
@@ -78,9 +73,9 @@ impl<I: Idx, T> IndexVec<I, T> {
 
     #[inline]
     pub fn push(&mut self, d: T) -> I {
-        let idx = I::new(self.len());
+        let idx = self.len();
         self.raw.push(d);
-        idx
+        I::from(idx)
     }
 
     #[inline]
@@ -101,7 +96,7 @@ impl<I: Idx, T> IndexVec<I, T> {
     #[inline]
     pub fn into_iter_enumerated(self) -> Enumerated<I, vec::IntoIter<T>>
     {
-        self.raw.into_iter().enumerate().map(IntoIdx { _marker: PhantomData })
+        self.raw.into_iter().enumerate().map(IntoNodeIndex { _marker: PhantomData })
     }
 
     #[inline]
@@ -112,12 +107,12 @@ impl<I: Idx, T> IndexVec<I, T> {
     #[inline]
     pub fn iter_enumerated(&self) -> Enumerated<I, slice::Iter<T>>
     {
-        self.raw.iter().enumerate().map(IntoIdx { _marker: PhantomData })
+        self.raw.iter().enumerate().map(IntoNodeIndex { _marker: PhantomData })
     }
 
     #[inline]
-    pub fn indices(&self) -> iter::Map<Range<usize>, IntoIdx<I>> {
-        (0..self.len()).map(IntoIdx { _marker: PhantomData })
+    pub fn indices(&self) -> iter::Map<Range<usize>, IntoNodeIndex<I>> {
+        (0..self.len()).map(IntoNodeIndex { _marker: PhantomData })
     }
 
     #[inline]
@@ -128,46 +123,49 @@ impl<I: Idx, T> IndexVec<I, T> {
     #[inline]
     pub fn iter_enumerated_mut(&mut self) -> Enumerated<I, slice::IterMut<T>>
     {
-        self.raw.iter_mut().enumerate().map(IntoIdx { _marker: PhantomData })
+        self.raw.iter_mut().enumerate().map(IntoNodeIndex { _marker: PhantomData })
     }
 
     #[inline]
     pub fn last(&self) -> Option<I> {
-        self.len().checked_sub(1).map(I::new)
+        match self.len().checked_sub(1) {
+            Some (x) => Some(I::from(x)),
+            None => None
+        }
     }
 }
 
-impl<I: Idx, T> Index<I> for IndexVec<I, T> {
+impl<I: NodeIndex, T> Index<I> for IndexVec<I, T> {
     type Output = T;
 
     #[inline]
     fn index(&self, index: I) -> &T {
-        &self.raw[index.index()]
+        &self.raw[index.into()]
     }
 }
 
-impl<I: Idx, T> IndexMut<I> for IndexVec<I, T> {
+impl<I: NodeIndex, T> IndexMut<I> for IndexVec<I, T> {
     #[inline]
     fn index_mut(&mut self, index: I) -> &mut T {
-        &mut self.raw[index.index()]
+        &mut self.raw[index.into()]
     }
 }
 
-impl<I: Idx, T> Extend<T> for IndexVec<I, T> {
+impl<I: NodeIndex, T> Extend<T> for IndexVec<I, T> {
     #[inline]
     fn extend<J: IntoIterator<Item = T>>(&mut self, iter: J) {
         self.raw.extend(iter);
     }
 }
 
-impl<I: Idx, T> FromIterator<T> for IndexVec<I, T> {
+impl<I: NodeIndex, T> FromIterator<T> for IndexVec<I, T> {
     #[inline]
     fn from_iter<J>(iter: J) -> Self where J: IntoIterator<Item=T> {
         IndexVec { raw: FromIterator::from_iter(iter), _marker: PhantomData }
     }
 }
 
-impl<I: Idx, T> IntoIterator for IndexVec<I, T> {
+impl<I: NodeIndex, T> IntoIterator for IndexVec<I, T> {
     type Item = T;
     type IntoIter = vec::IntoIter<T>;
 
@@ -178,7 +176,7 @@ impl<I: Idx, T> IntoIterator for IndexVec<I, T> {
 
 }
 
-impl<'a, I: Idx, T> IntoIterator for &'a IndexVec<I, T> {
+impl<'a, I: NodeIndex, T> IntoIterator for &'a IndexVec<I, T> {
     type Item = &'a T;
     type IntoIter = slice::Iter<'a, T>;
 
@@ -188,7 +186,7 @@ impl<'a, I: Idx, T> IntoIterator for &'a IndexVec<I, T> {
     }
 }
 
-impl<'a, I: Idx, T> IntoIterator for &'a mut IndexVec<I, T> {
+impl<'a, I: NodeIndex, T> IntoIterator for &'a mut IndexVec<I, T> {
     type Item = &'a mut T;
     type IntoIter = slice::IterMut<'a, T>;
 
@@ -198,31 +196,32 @@ impl<'a, I: Idx, T> IntoIterator for &'a mut IndexVec<I, T> {
     }
 }
 
-pub struct IntoIdx<I: Idx> { _marker: PhantomData<fn(&I)> }
-impl<I: Idx, T> FnOnce<((usize, T),)> for IntoIdx<I> {
+pub struct IntoNodeIndex<I: NodeIndex> { _marker: PhantomData<fn(&I)> }
+impl<I: NodeIndex, T> FnOnce<((usize, T),)> for IntoNodeIndex<I> {
     type Output = (I, T);
 
     extern "rust-call" fn call_once(self, ((n, t),): ((usize, T),)) -> Self::Output {
-        (I::new(n), t)
+        (I::from(n), t)
     }
 }
 
-impl<I: Idx, T> FnMut<((usize, T),)> for IntoIdx<I> {
+impl<I: NodeIndex, T> FnMut<((usize, T),)> for IntoNodeIndex<I> {
     extern "rust-call" fn call_mut(&mut self, ((n, t),): ((usize, T),)) -> Self::Output {
-        (I::new(n), t)
+        (I::from(n), t)
     }
 }
 
-impl<I: Idx> FnOnce<(usize,)> for IntoIdx<I> {
+impl<I: NodeIndex> FnOnce<(usize,)> for IntoNodeIndex<I> {
     type Output = I;
 
     extern "rust-call" fn call_once(self, (n,): (usize,)) -> Self::Output {
-        I::new(n)
+        I::from(n)
     }
 }
 
-impl<I: Idx> FnMut<(usize,)> for IntoIdx<I> {
+impl<I: NodeIndex> FnMut<(usize,)> for IntoNodeIndex<I> {
     extern "rust-call" fn call_mut(&mut self, (n,): (usize,)) -> Self::Output {
-        I::new(n)
+        I::from(n)
     }
 }
+

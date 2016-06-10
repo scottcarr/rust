@@ -17,19 +17,19 @@ use std::ops::{Deref, DerefMut, Range};
 use bitslice::{BitSlice, Word};
 use bitslice::{bitwise, Union, Subtract};
 
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 
 /// Represents a set (or packed family of sets), of some element type
 /// E, where each E is identified by some unique index type `T`.
 ///
 /// In other words, `T` is the type used to index into the bitvector
 /// this type uses to represent the set of object it holds.
-pub struct IdxSetBuf<T: Idx> {
+pub struct IdxSetBuf<T: NodeIndex> {
     _pd: PhantomData<fn(&T)>,
     bits: Vec<Word>,
 }
 
-impl<T: Idx> Clone for IdxSetBuf<T> {
+impl<T: NodeIndex> Clone for IdxSetBuf<T> {
     fn clone(&self) -> Self {
         IdxSetBuf { _pd: PhantomData, bits: self.bits.clone() }
     }
@@ -47,20 +47,20 @@ impl<T: Idx> Clone for IdxSetBuf<T> {
 ///
 /// In other words, `T` is the type used to index into the bitslice
 /// this type uses to represent the set of object it holds.
-pub struct IdxSet<T: Idx> {
+pub struct IdxSet<T: NodeIndex> {
     _pd: PhantomData<fn(&T)>,
     bits: [Word],
 }
 
-impl<T: Idx> fmt::Debug for IdxSetBuf<T> {
+impl<T: NodeIndex> fmt::Debug for IdxSetBuf<T> {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result { self.bits.fmt(w) }
 }
 
-impl<T: Idx> fmt::Debug for IdxSet<T> {
+impl<T: NodeIndex> fmt::Debug for IdxSet<T> {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result { self.bits.fmt(w) }
 }
 
-impl<T: Idx> IdxSetBuf<T> {
+impl<T: NodeIndex> IdxSetBuf<T> {
     fn new(init: Word, universe_size: usize) -> Self {
         let bits_per_word = mem::size_of::<Word>() * 8;
         let num_words = (universe_size + (bits_per_word - 1)) / bits_per_word;
@@ -81,7 +81,7 @@ impl<T: Idx> IdxSetBuf<T> {
     }
 }
 
-impl<T: Idx> IdxSet<T> {
+impl<T: NodeIndex> IdxSet<T> {
     unsafe fn from_slice(s: &[Word]) -> &Self {
         mem::transmute(s) // (see above WARNING)
     }
@@ -91,20 +91,20 @@ impl<T: Idx> IdxSet<T> {
     }
 }
 
-impl<T: Idx> Deref for IdxSetBuf<T> {
+impl<T: NodeIndex> Deref for IdxSetBuf<T> {
     type Target = IdxSet<T>;
     fn deref(&self) -> &IdxSet<T> {
         unsafe { IdxSet::from_slice(&self.bits[..]) }
     }
 }
 
-impl<T: Idx> DerefMut for IdxSetBuf<T> {
+impl<T: NodeIndex> DerefMut for IdxSetBuf<T> {
     fn deref_mut(&mut self) -> &mut IdxSet<T> {
         unsafe { IdxSet::from_slice_mut(&mut self.bits[..]) }
     }
 }
 
-impl<T: Idx> IdxSet<T> {
+impl<T: NodeIndex> IdxSet<T> {
     pub fn to_owned(&self) -> IdxSetBuf<T> {
         IdxSetBuf {
             _pd: Default::default(),

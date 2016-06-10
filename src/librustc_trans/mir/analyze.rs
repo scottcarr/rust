@@ -12,7 +12,7 @@
 //! which do not.
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_data_structures::indexed_vec::{NodeIndex, IndexVec};
 use rustc::mir::repr as mir;
 use rustc::mir::repr::TerminatorKind;
 use rustc::mir::visit::{Visitor, LvalueContext};
@@ -98,7 +98,7 @@ impl<'mir, 'bcx, 'tcx> Visitor<'tcx> for TempAnalyzer<'mir, 'bcx, 'tcx> {
             mir::Lvalue::Temp(temp) => {
                 self.mark_assigned(temp.index());
                 if !rvalue::rvalue_creates_operand(self.mir, self.bcx, rvalue) {
-                    self.mark_as_lvalue(temp.index());
+                    self.mark_as_lvalue(temp.into());
                 }
             }
             _ => {
@@ -133,7 +133,7 @@ impl<'mir, 'bcx, 'tcx> Visitor<'tcx> for TempAnalyzer<'mir, 'bcx, 'tcx> {
             mir::Lvalue::Temp(temp) => {
                 match context {
                     LvalueContext::Call => {
-                        self.mark_assigned(temp.index());
+                        self.mark_assigned(temp.into());
                     }
                     LvalueContext::Consume => {
                     }
@@ -143,7 +143,7 @@ impl<'mir, 'bcx, 'tcx> Visitor<'tcx> for TempAnalyzer<'mir, 'bcx, 'tcx> {
                     LvalueContext::Borrow { .. } |
                     LvalueContext::Slice { .. } |
                     LvalueContext::Projection => {
-                        self.mark_as_lvalue(temp.index());
+                        self.mark_as_lvalue(temp.into());
                     }
                 }
             }

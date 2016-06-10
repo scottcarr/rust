@@ -26,7 +26,7 @@ use syntax::codemap::{Span, Pos};
 use syntax::{ast, codemap};
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_data_structures::indexed_vec::{NodeIndex, IndexVec};
 use rustc::hir::{self, PatKind};
 
 // This procedure builds the *scope map* for a given function, which maps any
@@ -85,12 +85,12 @@ pub fn create_mir_scopes(fcx: &FunctionContext) -> IndexVec<VisibilityScope, DIS
     // Find all the scopes with variables defined in them.
     let mut has_variables = BitVector::new(mir.visibility_scopes.len());
     for var in &mir.var_decls {
-        has_variables.insert(var.source_info.scope.index());
+        has_variables.insert(var.source_info.scope.into());
     }
 
     // Instantiate all scopes.
     for idx in 0..mir.visibility_scopes.len() {
-        let scope = VisibilityScope::new(idx);
+        let scope = VisibilityScope::from(idx);
         make_mir_scope(fcx.ccx, &mir, &has_variables, fn_metadata, scope, &mut scopes);
     }
 
@@ -117,7 +117,7 @@ fn make_mir_scope(ccx: &CrateContext,
         return;
     };
 
-    if !has_variables.contains(scope.index()) {
+    if !has_variables.contains(scope.into()) {
         // Do not create a DIScope if there are no variables
         // defined in this MIR Scope, to avoid debuginfo bloat.
 

@@ -33,7 +33,7 @@
 
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_data_structures::indexed_vec::{NodeIndex, IndexVec};
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
@@ -95,7 +95,7 @@ impl<'a, 'tcx: 'a> CfgSimplifier<'a, 'tcx> {
         loop {
             let mut changed = false;
 
-            for bb in (0..self.basic_blocks.len()).map(BasicBlock::new) {
+            for bb in (0..self.basic_blocks.len()).map(BasicBlock::from) {
                 if self.pred_count[bb] == 0 {
                     continue
                 }
@@ -219,16 +219,16 @@ impl<'a, 'tcx: 'a> CfgSimplifier<'a, 'tcx> {
 fn remove_dead_blocks(mir: &mut Mir) {
     let mut seen = BitVector::new(mir.basic_blocks().len());
     for (bb, _) in traversal::preorder(mir) {
-        seen.insert(bb.index());
+        seen.insert(bb.into());
     }
 
     let basic_blocks = mir.basic_blocks_mut();
 
     let num_blocks = basic_blocks.len();
-    let mut replacements : Vec<_> = (0..num_blocks).map(BasicBlock::new).collect();
+    let mut replacements : Vec<BasicBlock> = (0..num_blocks).map(BasicBlock::from).collect();
     let mut used_blocks = 0;
     for alive_index in seen.iter() {
-        replacements[alive_index] = BasicBlock::new(used_blocks);
+        replacements[alive_index] = BasicBlock::from(used_blocks);
         if alive_index != used_blocks {
             // Swap the next alive block data with the current available slot. Since alive_index is
             // non-decreasing this is a valid operation.
@@ -240,7 +240,7 @@ fn remove_dead_blocks(mir: &mut Mir) {
 
     for block in basic_blocks {
         for target in block.terminator_mut().successors_mut() {
-            *target = replacements[target.index()];
+            *target = replacements[Into::<usize>::into(*target)];
         }
     }
 }

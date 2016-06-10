@@ -11,8 +11,7 @@
 //! Compute reachability using a simple dataflow propagation.
 //! Store end-result in a big NxN bit matrix.
 
-use super::{Graph, NodeIndex};
-//use super::bit_set::BitSet;
+use super::Graph;
 use super::super::bitvec::BitVector;
 use super::iterate::reverse_post_order;
 
@@ -34,13 +33,11 @@ pub fn reachable_given_rpo<G: Graph>(graph: &G,
         changed = false;
         for &node in reverse_post_order.iter().rev() {
             // every node can reach itself
-            //changed |= reachability.bits.insert(node, node.as_usize());
-            changed |= reachability.bits[node.as_usize()].insert(node.as_usize());
+            changed |= reachability.bits[node.into()].insert(node.into());
 
             // and every pred can reach everything node can reach
             for pred in graph.predecessors(node) {
-                //changed |= reachability.bits.insert_bits_from(node, pred);
-                changed |= reachability.bits[node.as_usize()].insert(pred.as_usize());
+                changed |= reachability.bits[node.into()].insert(pred.into());
             }
         }
     }
@@ -65,7 +62,6 @@ impl Reachability {
 
     pub fn can_reach<G: Graph>(&self, source: G::Node, target: G::Node) -> bool {
         let bit: usize = target.into();
-        //self.bits.is_set(source, bit)
-        self.bits[source.as_usize()].contains(bit)
+        self.bits[source.into()].contains(bit)
     }
 }

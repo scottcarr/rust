@@ -11,7 +11,7 @@
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
-use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_data_structures::indexed_vec::{NodeIndex, IndexVec};
 
 use pretty;
 
@@ -69,7 +69,7 @@ impl<'tcx> MirPass<'tcx> for AddCallGuards {
                     // Get the index it will be when inserted into the MIR
                     let idx = cur_len + new_blocks.len();
                     new_blocks.push(call_guard);
-                    *destination = BasicBlock::new(idx);
+                    *destination = BasicBlock::from(idx);
                 }
                 _ => {}
             }

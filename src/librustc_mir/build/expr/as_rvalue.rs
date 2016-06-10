@@ -14,7 +14,7 @@ use std;
 
 use rustc_const_math::{ConstMathErr, Op};
 use rustc_data_structures::fnv::FnvHashMap;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 
 use build::{BlockAnd, BlockAndExtension, Builder};
 use build::expr::category::{Category, RvalueFunc};
@@ -256,8 +256,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                  &result_value, Rvalue::CheckedBinaryOp(op,
                                                                         lhs,
                                                                         rhs));
-            let val_fld = Field::new(0);
-            let of_fld = Field::new(1);
+            let val_fld = Field::from(0);
+            let of_fld = Field::from(1);
 
             let val = result_value.clone().field(val_fld, ty);
             let of = result_value.field(of_fld, bool_ty);

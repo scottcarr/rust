@@ -24,7 +24,7 @@ use rustc::mir::visit::{self, Visitor};
 use std::fmt;
 use syntax::codemap::{Span, DUMMY_SP};
 
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 
 macro_rules! span_mirbug {
     ($context:expr, $elem:expr, $($message:tt)*) => ({
@@ -262,7 +262,7 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                     Err(FieldAccessError::OutOfRange { field_count }) => {
                         span_mirbug!(
                             self, lvalue, "accessed field #{} but variant only has {}",
-                            field.index(), field_count)
+                            Into::<usize>::into(field), field_count)
                     }
                 }
                 LvalueTy::Ty { ty: fty }
@@ -295,7 +295,7 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                 ty::TyTuple(tys) | ty::TyClosure(_, ty::ClosureSubsts {
                     upvar_tys: tys, ..
                 }) => {
-                    return match tys.get(field.index()) {
+                    return match tys.get(field.into()) {
                         Some(&ty) => Ok(ty),
                         None => Err(FieldAccessError::OutOfRange {
                             field_count: tys.len()
@@ -307,7 +307,7 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
             }
         };
 
-        if let Some(field) = variant.fields.get(field.index()) {
+        if let Some(field) = variant.fields.get(field.into()) {
             Ok(self.cx.normalize(&field.ty(tcx, substs)))
         } else {
             Err(FieldAccessError::OutOfRange { field_count: variant.fields.len() })

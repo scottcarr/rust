@@ -15,7 +15,7 @@ use ty::{ClosureSubsts, FnOutput, Region, Ty};
 use mir::repr::*;
 use rustc_const_math::ConstUsize;
 use rustc_data_structures::tuple_slice::TupleSlice;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 use syntax::codemap::Span;
 
 // # The MIR Visitor
@@ -253,7 +253,7 @@ macro_rules! make_mir_visitor {
             fn super_mir(&mut self,
                          mir: & $($mutability)* Mir<'tcx>) {
                 for index in 0..mir.basic_blocks().len() {
-                    let block = BasicBlock::new(index);
+                    let block = BasicBlock::from(index);
                     self.visit_basic_block_data(block, &$($mutability)* mir[block]);
                 }
 

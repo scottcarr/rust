@@ -11,8 +11,7 @@
 use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
-use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-use rustc_data_structures::graph_algorithms::NodeIndex;
+use rustc_data_structures::indexed_vec::{IndexVec, NodeIndex};
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -36,12 +35,17 @@ macro_rules! newtype_index {
          RustcEncodable, RustcDecodable)]
         pub struct $name(u32);
 
-        impl Idx for $name {
-            fn new(value: usize) -> Self {
+        impl NodeIndex for $name {}
+
+        impl From<usize> for $name {
+            fn from(value: usize) -> Self {
                 assert!(value < (u32::MAX) as usize);
                 $name(value as u32)
             }
-            fn index(self) -> usize {
+        }
+
+        impl Into<usize> for $name {
+            fn into(self) -> usize {
                 self.0 as usize
             }
         }
@@ -163,23 +167,17 @@ impl<'tcx> IndexMut<BasicBlock> for Mir<'tcx> {
     }
 }
 
-impl From<usize> for BasicBlock {
-    fn from(n: usize) -> BasicBlock {
-        assert!(n < (u32::MAX as usize));
-        BasicBlock(n as u32)
-    }
-}
-impl Into<usize> for BasicBlock {
-    fn into(self: BasicBlock) -> usize {
-        self.index()
-    }
-}
-
-impl NodeIndex for BasicBlock {
-    fn as_usize(self) -> usize {
-        self.index()
-    }
-}
+//impl From<usize> for BasicBlock {
+//    fn from(n: usize) -> BasicBlock {
+//        assert!(n < (u32::MAX as usize));
+//        BasicBlock(n as u32)
+//    }
+//}
+//impl Into<usize> for BasicBlock {
+//    fn into(self: BasicBlock) -> usize {
+//        self.index()
+//    }
+//}
 
 /// Grouped information about the source code origin of a MIR entity.
 /// Intended to be inspected by diagnostics and debuginfo.
@@ -805,7 +803,7 @@ impl<'tcx> Debug for Lvalue<'tcx> {
                     ProjectionElem::Deref =>
                         write!(fmt, "(*{:?})", data.base),
                     ProjectionElem::Field(field, ty) =>
-                        write!(fmt, "({:?}.{:?}: {:?})", data.base, field.index(), ty),
+                        write!(fmt, "({:?}.{:?}: {:?})", data.base, field, ty),
                     ProjectionElem::Index(ref index) =>
                         write!(fmt, "{:?}[{:?}]", data.base, index),
                     ProjectionElem::ConstantIndex { offset, min_length, from_end: false } =>

@@ -22,7 +22,7 @@ use rustc::mir::transform::{Pass, MirPass, MirSource};
 use rustc::middle::const_val::ConstVal;
 use rustc::middle::lang_items;
 use rustc::util::nodemap::FnvHashMap;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 use syntax::codemap::Span;
 
 use std::fmt;

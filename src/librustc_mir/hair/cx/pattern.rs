@@ -11,7 +11,7 @@
 use hair::*;
 use hair::cx::Cx;
 use rustc_data_structures::fnv::FnvHashMap;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 use rustc_const_eval as const_eval;
 use rustc::hir::def::Def;
 use rustc::hir::pat_util::{EnumerateAndAdjustIterator, pat_is_resolved_const};
@@ -156,7 +156,7 @@ impl<'patcx, 'cx, 'gcx, 'tcx> PatCx<'patcx, 'cx, 'gcx, 'tcx> {
                             subpatterns.iter()
                                        .enumerate_and_adjust(tys.len(), ddpos)
                                        .map(|(i, subpattern)| FieldPattern {
-                                            field: Field::new(i),
+                                            field: Field::from(i),
                                             pattern: self.to_pattern(subpattern),
                                        })
                                        .collect();
@@ -226,7 +226,7 @@ impl<'patcx, 'cx, 'gcx, 'tcx> PatCx<'patcx, 'cx, 'gcx, 'tcx> {
                         subpatterns.iter()
                                    .enumerate_and_adjust(variant_def.fields.len(), ddpos)
                                    .map(|(i, field)| FieldPattern {
-                                       field: Field::new(i),
+                                       field: Field::from(i),
                                        pattern: self.to_pattern(field),
                                    })
                                    .collect();
@@ -258,7 +258,7 @@ impl<'patcx, 'cx, 'gcx, 'tcx> PatCx<'patcx, 'cx, 'gcx, 'tcx> {
                                       field.node.name);
                               });
                               FieldPattern {
-                                  field: Field::new(index),
+                                  field: Field::from(index),
                                   pattern: self.to_pattern(&field.node.pat),
                               }
                           })

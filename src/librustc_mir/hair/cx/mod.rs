@@ -21,7 +21,7 @@ use rustc::mir::transform::MirSource;
 
 use rustc::middle::const_val::ConstVal;
 use rustc_const_eval as const_eval;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::FnKind;
 use rustc::hir::map::blocks::FnLikeNode;
@@ -178,7 +178,7 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
 
     pub fn all_fields(&mut self, adt_def: ty::AdtDef, variant_index: usize) -> Vec<Field> {
         (0..adt_def.variants[variant_index].fields.len())
-            .map(Field::new)
+            .map(Field::from)
             .collect()
     }
 

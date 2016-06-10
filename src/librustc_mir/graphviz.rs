@@ -15,7 +15,7 @@ use std::fmt::Debug;
 use std::io::{self, Write};
 use syntax::ast::NodeId;
 
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 
 /// Write a graphviz DOT graph of a list of MIRs.
 pub fn write_mir_graphviz<'a, 'b, 'tcx, W, I>(tcx: TyCtxt<'b, 'tcx, 'tcx>,
@@ -71,7 +71,7 @@ pub fn write_node_label<W: Write, INIT, FINI>(block: BasicBlock,
     write!(w, r#"<tr><td {attrs} colspan="{colspan}">{blk}</td></tr>"#,
            attrs=r#"bgcolor="gray" align="center""#,
            colspan=num_cols,
-           blk=block.index())?;
+           blk= Into::<usize>::into(block))?;
 
     init(w)?;
 
@@ -132,7 +132,7 @@ fn write_graph_label<'a, 'tcx, W: Write>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         if i > 0 {
             write!(w, ", ")?;
         }
-        write!(w, "{:?}: {}", Lvalue::Arg(Arg::new(i)), escape(&arg.ty))?;
+        write!(w, "{:?}: {}", Lvalue::Arg(Arg::from(i)), escape(&arg.ty))?;
     }
 
     write!(w, ") -&gt; ")?;
@@ -152,20 +152,20 @@ fn write_graph_label<'a, 'tcx, W: Write>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             write!(w, "mut ")?;
         }
         write!(w, r#"{:?}: {}; // {}<br align="left"/>"#,
-               Lvalue::Var(Var::new(i)), escape(&var.ty), var.name)?;
+               Lvalue::Var(Var::from(i)), escape(&var.ty), var.name)?;
     }
 
     // Compiler-introduced temporary types.
     for (i, temp) in mir.temp_decls.iter().enumerate() {
         write!(w, r#"let mut {:?}: {};<br align="left"/>"#,
-               Lvalue::Temp(Temp::new(i)), escape(&temp.ty))?;
+               Lvalue::Temp(Temp::from(i)), escape(&temp.ty))?;
     }
 
     writeln!(w, ">;")
 }
 
 fn node(block: BasicBlock) -> String {
-    format!("bb{}", block.index())
+    format!("bb{}", Into::<usize>::into(block))
 }
 
 fn escape<T: Debug>(t: &T) -> String {

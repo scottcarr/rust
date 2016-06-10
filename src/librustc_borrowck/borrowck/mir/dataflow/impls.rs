@@ -10,7 +10,7 @@
 
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::{self, Mir};
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 
 use super::super::gather_moves::{Location};
 use super::super::gather_moves::{MoveOutIndex, MovePathIndex};

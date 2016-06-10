@@ -11,7 +11,7 @@
 use llvm::ValueRef;
 use rustc::ty::Ty;
 use rustc::mir::repr as mir;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 
 use base;
 use common::{self, Block, BlockAndBuilder};
@@ -197,7 +197,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             match (o.val, &proj.elem) {
                                 (OperandValue::Pair(a, b),
                                  &mir::ProjectionElem::Field(ref f, ty)) => {
-                                    let llval = [a, b][f.index()];
+                                    let llval = [a, b][f.into()];
                                     return OperandRef {
                                         val: OperandValue::Immediate(llval),
                                         ty: bcx.monomorphize(&ty)

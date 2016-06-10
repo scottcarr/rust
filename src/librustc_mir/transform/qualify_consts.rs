@@ -15,7 +15,7 @@
 //! diagnostics as to why a constant rvalue wasn't promoted.
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{IndexVec, Idx};
+use rustc_data_structures::indexed_vec::{IndexVec, NodeIndex};
 use rustc::hir;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::FnKind;
@@ -340,7 +340,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
         let mut seen_blocks = BitVector::new(mir.basic_blocks().len());
         let mut bb = START_BLOCK;
         loop {
-            seen_blocks.insert(bb.index());
+            seen_blocks.insert(bb.into());
 
             self.visit_basic_block_data(bb, &mir[bb]);
 
@@ -395,7 +395,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
                     self.qualif = Qualif::NOT_CONST;
                     for index in 0..mir.var_decls.len() {
                         if !self.const_fn_arg_vars.contains(index) {
-                            self.assign(&Lvalue::Var(Var::new(index)));
+                            self.assign(&Lvalue::Var(Var::from(index)));
                         }
                     }
 
@@ -405,7 +405,7 @@ impl<'a, 'tcx> Qualifier<'a, 'tcx, 'tcx> {
 
             match target {
                 // No loops allowed.
-                Some(target) if !seen_blocks.contains(target.index()) => {
+                Some(target) if !seen_blocks.contains(target.into()) => {
                     bb = target;
                 }
                 _ => {
@@ -824,7 +824,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
 
         // Check the allowed const fn argument forms.
         if let (Mode::ConstFn, &Lvalue::Var(index)) = (self.mode, dest) {
-            if self.const_fn_arg_vars.insert(index.index()) {
+            if self.const_fn_arg_vars.insert(index.into()) {
                 // Direct use of an argument is permitted.
                 if let Rvalue::Use(Operand::Consume(Lvalue::Arg(_))) = *rvalue {
                     return;

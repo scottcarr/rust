@@ -10,7 +10,7 @@
 
 use hair::*;
 use rustc_data_structures::fnv::FnvHashMap;
-use rustc_data_structures::indexed_vec::Idx;
+use rustc_data_structures::indexed_vec::NodeIndex;
 use rustc_const_math::ConstInt;
 use hair::cx::Cx;
 use hair::cx::block;
@@ -278,7 +278,7 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                 if let Some((adt_def, index)) = adt_data {
                     let substs = cx.tcx.node_id_item_substs(fun.id).substs;
                     let field_refs = args.iter().enumerate().map(|(idx, e)| FieldExprRef {
-                        name: Field::new(idx),
+                        name: Field::from(idx),
                         expr: e.to_ref()
                     }).collect();
                     ExprKind::Adt {
@@ -587,11 +587,11 @@ fn make_mirror_unadjusted<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
                     "no index found for field `{}`",
                     name.node)
             });
-            ExprKind::Field { lhs: source.to_ref(), name: Field::new(index) }
+            ExprKind::Field { lhs: source.to_ref(), name: Field::from(index) }
         }
         hir::ExprTupField(ref source, index) =>
             ExprKind::Field { lhs: source.to_ref(),
-                              name: Field::new(index.node as usize) },
+                              name: Field::from(index.node as usize) },
         hir::ExprCast(ref source, _) => {
             // Check to see if this cast is a "coercion cast", where the cast is actually done
             // using a coercion (or is a no-op).
@@ -840,7 +840,7 @@ fn convert_var<'a, 'gcx, 'tcx>(cx: &mut Cx<'a, 'gcx, 'tcx>,
             // at this point we have `self.n`, which loads up the upvar
             let field_kind = ExprKind::Field {
                 lhs: self_expr.to_ref(),
-                name: Field::new(index),
+                name: Field::from(index),
             };
 
             // ...but the upvar might be an `&T` or `&mut T` capture, at which
@@ -1054,7 +1054,7 @@ fn field_refs<'tcx>(variant: VariantDef<'tcx>,
 {
     fields.iter()
           .map(|field| FieldExprRef {
-              name: Field::new(variant.index_of_field_named(field.name.node).unwrap()),
+              name: Field::from(variant.index_of_field_named(field.name.node).unwrap()),
               expr: field.expr.to_ref(),
           })
           .collect()

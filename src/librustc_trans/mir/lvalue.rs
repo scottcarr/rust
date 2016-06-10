@@ -12,7 +12,7 @@ use llvm::ValueRef;
 use rustc::ty::{self, Ty, TypeFoldable};
 use rustc::mir::repr as mir;
 use rustc::mir::tcx::LvalueTy;
-use rustc_data_structures::indexed_vec::NodeIndex;
+use rustc_data_structures::indexed_vec::Idx;
 use abi;
 use adt;
 use base;
@@ -162,7 +162,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                             adt::MaybeSizedValue::unsized_(tr_base.llval, tr_base.llextra)
                         };
                         let llprojected = adt::trans_field_ptr_builder(bcx, &base_repr, base,
-                                                                       Disr(discr), field.into());
+                                                                       Disr(discr), field.index());
                         let llextra = if is_sized {
                             ptr::null_mut()
                         } else {

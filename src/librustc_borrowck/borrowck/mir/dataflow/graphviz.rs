@@ -12,7 +12,7 @@
 
 use syntax::ast::NodeId;
 use rustc::mir::repr::{BasicBlock, Mir};
-use rustc_data_structures::indexed_vec::NodeIndex;
+use rustc_data_structures::indexed_vec::Idx;
 
 use dot;
 use dot::IntoCow;

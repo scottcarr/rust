@@ -11,7 +11,7 @@
 use super::gather_moves::Location;
 use rustc::ty::Ty;
 use rustc::mir::repr::*;
-use rustc_data_structures::indexed_vec::{IndexVec, NodeIndex};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 /// This struct represents a patch to MIR, which can add
 /// new statements and basic blocks and patch over block

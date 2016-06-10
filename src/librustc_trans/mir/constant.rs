@@ -22,7 +22,7 @@ use rustc::traits;
 use rustc::ty::{self, Ty, TyCtxt, TypeFoldable};
 use rustc::ty::cast::{CastTy, IntTy};
 use rustc::ty::subst::Substs;
-use rustc_data_structures::indexed_vec::{NodeIndex, IndexVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use {abi, adt, base, Disr};
 use callee::Callee;
 use common::{self, BlockAndBuilder, CrateContext, const_get_elt, val_ty};
@@ -431,7 +431,7 @@ impl<'a, 'tcx> MirConstContext<'a, 'tcx> {
                     mir::ProjectionElem::Field(ref field, _) => {
                         let base_repr = adt::represent_type(self.ccx, tr_base.ty);
                         let llprojected = adt::const_get_field(&base_repr, base.llval,
-                                                               Disr(0), field.into());
+                                                               Disr(0), field.index());
                         let llextra = if is_sized {
                             ptr::null_mut()
                         } else {

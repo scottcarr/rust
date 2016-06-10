@@ -14,7 +14,7 @@ use rustc::mir::repr::*;
 use rustc::mir::transform::MirSource;
 use rustc::ty::{self, TyCtxt};
 use rustc_data_structures::fnv::FnvHashMap;
-use rustc_data_structures::indexed_vec::NodeIndex;
+use rustc_data_structures::indexed_vec::{Idx};
 use std::fmt::Display;
 use std::fs;
 use std::io::{self, Write};
@@ -137,7 +137,7 @@ pub fn write_mir_fn<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     write_mir_intro(tcx, src, mir, w)?;
     for block in mir.basic_blocks().indices() {
         write_basic_block(tcx, block, mir, w, &annotations)?;
-        if Into::<usize>::into(block) + 1 != mir.basic_blocks().len() {
+        if block.index() + 1 != mir.basic_blocks().len() {
             writeln!(w, "")?;
         }
     }
@@ -166,10 +166,10 @@ fn write_basic_block(tcx: TyCtxt,
                 match *annotation {
                     Annotation::EnterScope(id) =>
                         writeln!(w, "{0}{0}// Enter Scope({1})",
-                                 INDENT, Into::<usize>::into(id))?,
+                                 INDENT, id.index())?,
                     Annotation::ExitScope(id) =>
                         writeln!(w, "{0}{0}// Exit Scope({1})",
-                                 INDENT, Into::<usize>::into(id))?,
+                                 INDENT, id.index())?,
                 }
             }
         }
@@ -194,7 +194,7 @@ fn write_basic_block(tcx: TyCtxt,
 }
 
 fn comment(tcx: TyCtxt, SourceInfo { span, scope }: SourceInfo) -> String {
-    format!("scope {} at {}", Into::<usize>::into(scope), tcx.sess.codemap().span_to_string(span))
+    format!("scope {} at {}", scope.index(), tcx.sess.codemap().span_to_string(span))
 }
 
 fn write_scope_tree(tcx: TyCtxt,
@@ -214,7 +214,7 @@ fn write_scope_tree(tcx: TyCtxt,
     for &child in children {
         let data = &mir.visibility_scopes[child];
         assert_eq!(data.parent_scope, Some(parent));
-        writeln!(w, "{0:1$}scope {2} {{", "", indent, Into::<usize>::into(child));
+        writeln!(w, "{0:1$}scope {2} {{", "", indent, child.index())?;
 
         // User variable types (including the user's name in a comment).
         for (id, var) in mir.var_decls.iter_enumerated() {
@@ -267,10 +267,10 @@ fn write_mir_intro<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         if let Some(parent) = scope_data.parent_scope {
             scope_tree.entry(parent)
                       .or_insert(vec![])
-                      .push(VisibilityScope::from(index));
+                      .push(VisibilityScope::new(index));
         } else {
             // Only the argument scope has no parent, because it's the root.
-            assert_eq!(index, ARGUMENT_VISIBILITY_SCOPE.into());
+            assert_eq!(index, ARGUMENT_VISIBILITY_SCOPE.index());
         }
     }
 
@@ -297,7 +297,7 @@ fn write_mir_sig(tcx: TyCtxt, src: MirSource, mir: &Mir, w: &mut Write)
 
         // fn argument types.
         for (i, arg) in mir.arg_decls.iter_enumerated() {
-            if Into::<usize>::into(i) != 0 {
+            if i.index() != 0 {
                 write!(w, ", ")?;
             }
             write!(w, "{:?}: {}", Lvalue::Arg(i), arg.ty)?;

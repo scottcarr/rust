@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc_data_structures::indexed_vec::NodeIndex;
+use rustc_data_structures::indexed_vec::Idx;
 
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::{self, Mir};
@@ -167,15 +167,15 @@ impl<'a, 'tcx: 'a, BD> MirBorrowckCtxtPreDataflow<'a, 'tcx, BD>
 
 /// Maps each block to a set of bits
 #[derive(Debug)]
-struct Bits<E:NodeIndex> {
+struct Bits<E:Idx> {
     bits: IdxSetBuf<E>,
 }
 
-impl<E:NodeIndex> Clone for Bits<E> {
+impl<E:Idx> Clone for Bits<E> {
     fn clone(&self) -> Self { Bits { bits: self.bits.clone() } }
 }
 
-impl<E:NodeIndex> Bits<E> {
+impl<E:Idx> Bits<E> {
     fn new(bits: IdxSetBuf<E>) -> Self {
         Bits { bits: bits }
     }
@@ -221,7 +221,7 @@ pub struct DataflowState<O: BitDenotation>
 }
 
 #[derive(Debug)]
-pub struct AllSets<E: NodeIndex> {
+pub struct AllSets<E: Idx> {
     /// Analysis bitwidth for each block.
     bits_per_block: usize,
 
@@ -243,13 +243,13 @@ pub struct AllSets<E: NodeIndex> {
     on_entry_sets: Bits<E>,
 }
 
-pub struct BlockSets<'a, E: NodeIndex> {
+pub struct BlockSets<'a, E: Idx> {
     on_entry: &'a mut IdxSet<E>,
     gen_set: &'a mut IdxSet<E>,
     kill_set: &'a mut IdxSet<E>,
 }
 
-impl<'a, E:NodeIndex> BlockSets<'a, E> {
+impl<'a, E:Idx> BlockSets<'a, E> {
     fn gen(&mut self, e: &E) {
         self.gen_set.add(e);
         self.kill_set.remove(e);
@@ -260,7 +260,7 @@ impl<'a, E:NodeIndex> BlockSets<'a, E> {
     }
 }
 
-impl<E:NodeIndex> AllSets<E> {
+impl<E:Idx> AllSets<E> {
     pub fn bits_per_block(&self) -> usize { self.bits_per_block }
     pub fn for_block(&mut self, block_idx: usize) -> BlockSets<E> {
         let offset = self.words_per_block * block_idx;
@@ -296,7 +296,7 @@ pub trait DataflowOperator: BitwiseOperator {
 
 pub trait BitDenotation {
     /// Specifies what index type is used to access the bitvector.
-    type Idx: NodeIndex;
+    type Idx: Idx;
 
     /// Specifies what, if any, separate context needs to be supplied for methods below.
     type Ctxt;

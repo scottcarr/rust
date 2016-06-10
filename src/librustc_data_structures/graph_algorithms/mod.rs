@@ -7,7 +7,8 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-use super::indexed_vec::NodeIndex;
+use std::fmt::Debug;
+use std::hash::Hash;
 
 //pub mod bit_set;
 pub mod dominators;
@@ -43,3 +44,10 @@ pub trait GraphSuccessors<'graph> {
     type Item;
     type Iter: Iterator<Item=Self::Item>;
 }
+
+pub trait NodeIndex: Copy + Debug + Eq + Ord + Hash + Into<usize> + From<usize> {
+    fn as_usize(self) -> usize {
+        self.into()
+    }
+}
+

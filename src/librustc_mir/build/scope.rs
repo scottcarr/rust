@@ -93,7 +93,7 @@ use rustc::ty::subst::{Substs, Subst, VecPerParamSpace};
 use rustc::ty::{Ty, TyCtxt};
 use rustc::mir::repr::*;
 use syntax::codemap::Span;
-use rustc_data_structures::indexed_vec::NodeIndex;
+use rustc_data_structures::indexed_vec::Idx;
 
 pub struct Scope<'tcx> {
     /// the scope-id within the scope_auxiliary
@@ -262,7 +262,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     /// wrapper maybe preferable.
     pub fn push_scope(&mut self, extent: CodeExtent, entry: BasicBlock) {
         debug!("push_scope({:?})", extent);
-        let id = ScopeId::from(self.scope_auxiliary.len());
+        let id = ScopeId::new(self.scope_auxiliary.len());
         let vis_scope = self.visibility_scope;
         self.scopes.push(Scope {
             id: id,
@@ -345,7 +345,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
     /// Creates a new visibility scope, nested in the current one.
     pub fn new_visibility_scope(&mut self, span: Span) -> VisibilityScope {
         let parent = self.visibility_scope;
-        let scope = VisibilityScope::from(self.visibility_scopes.len());
+        let scope = VisibilityScope::new(self.visibility_scopes.len());
         self.visibility_scopes.push(VisibilityScopeData {
             span: span,
             parent_scope: Some(parent),

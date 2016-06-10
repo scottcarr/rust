@@ -11,7 +11,7 @@
 use std::vec;
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::NodeIndex;
+use rustc_data_structures::indexed_vec::Idx;
 
 use super::repr::*;
 
@@ -60,7 +60,7 @@ impl<'a, 'tcx> Iterator for Preorder<'a, 'tcx> {
 
     fn next(&mut self) -> Option<(BasicBlock, &'a BasicBlockData<'tcx>)> {
         while let Some(idx) = self.worklist.pop() {
-            if !self.visited.insert(idx.into()) {
+            if !self.visited.insert(idx.index()) {
                 continue;
             }
 
@@ -115,7 +115,7 @@ impl<'a, 'tcx> Postorder<'a, 'tcx> {
         let data = &po.mir[root];
 
         if let Some(ref term) = data.terminator {
-            po.visited.insert(root.into());
+            po.visited.insert(root.index());
 
             let succs = term.successors().into_owned().into_iter();
 
@@ -185,7 +185,7 @@ impl<'a, 'tcx> Postorder<'a, 'tcx> {
                 break;
             };
 
-            if self.visited.insert(bb.into()) {
+            if self.visited.insert(bb.index()) {
                 if let Some(ref term) = self.mir[bb].terminator {
                     let succs = term.successors().into_owned().into_iter();
                     self.visit_stack.push((bb, succs));

@@ -19,7 +19,7 @@ use syntax::ast;
 use syntax::codemap::Span;
 use syntax::parse::token::keywords;
 
-use rustc_data_structures::indexed_vec::{IndexVec, NodeIndex};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 use std::u32;
 
@@ -65,20 +65,16 @@ struct CFG<'tcx> {
     basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ScopeId(u32);
 
-impl NodeIndex for ScopeId {}
-
-impl From<usize> for ScopeId {
-    fn from(index: usize) -> ScopeId {
+impl Idx for ScopeId {
+    fn new(index: usize) -> ScopeId {
         assert!(index < (u32::MAX as usize));
         ScopeId(index as u32)
     }
-}
 
-impl Into<usize> for ScopeId {
-    fn into(self) -> usize {
+    fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -323,7 +319,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         // to start, translate the argument patterns and collect the argument types.
         let mut scope = None;
         let arg_decls = arguments.enumerate().map(|(index, (ty, pattern))| {
-            let lvalue = Lvalue::Arg(Arg::from(index));
+            let lvalue = Lvalue::Arg(Arg::new(index));
             if let Some(pattern) = pattern {
                 let pattern = self.hir.irrefutable_pat(pattern);
                 scope = self.declare_bindings(scope, ast_block.span, &pattern);

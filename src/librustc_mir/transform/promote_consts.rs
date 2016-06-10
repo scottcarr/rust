@@ -30,7 +30,7 @@ use syntax::codemap::Span;
 
 use build::Location;
 
-use rustc_data_structures::indexed_vec::{IndexVec, NodeIndex};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 use std::mem;
 
@@ -295,7 +295,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
             span: span,
             ty: self.promoted.return_ty.unwrap(),
             literal: Literal::Promoted {
-                index: Promoted::from(self.source.promoted.len())
+                index: Promoted::new(self.source.promoted.len())
             }
         });
         let mut rvalue = match candidate {

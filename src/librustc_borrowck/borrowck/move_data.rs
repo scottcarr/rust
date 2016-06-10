@@ -78,7 +78,7 @@ pub struct FlowedMoveData<'a, 'tcx: 'a> {
 }
 
 /// Index into `MoveData.paths`, used like a pointer
-#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Debug,)]
+#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MovePathIndex(usize);
 
 impl MovePathIndex {

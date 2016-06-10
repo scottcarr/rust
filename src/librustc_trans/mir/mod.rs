@@ -30,7 +30,7 @@ use std::rc::Rc;
 use basic_block::BasicBlock;
 
 use rustc_data_structures::bitvec::BitVector;
-use rustc_data_structures::indexed_vec::{IndexVec, NodeIndex};
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 pub use self::constant::trans_static_initializer;
 
@@ -243,7 +243,7 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
 
     // Translate the body of each block using reverse postorder
     for (bb, _) in rpo {
-        visited.insert(bb.into());
+        visited.insert(bb.index());
         mircx.trans_block(bb);
     }
 
@@ -253,7 +253,7 @@ pub fn trans_mir<'blk, 'tcx: 'blk>(fcx: &'blk FunctionContext<'blk, 'tcx>) {
         let block = mircx.blocks[bb];
         let block = BasicBlock(block.llbb);
         // Unreachable block
-        if !visited.contains(bb.into()) {
+        if !visited.contains(bb.index()) {
             debug!("trans_mir: block {:?} was not visited", bb);
             block.delete();
         }

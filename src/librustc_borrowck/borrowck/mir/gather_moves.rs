@@ -12,7 +12,7 @@
 use rustc::ty::{FnOutput, TyCtxt};
 use rustc::mir::repr::*;
 use rustc::util::nodemap::FnvHashMap;
-use rustc_data_structures::indexed_vec::{NodeIndex, IndexVec};
+use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 
 use std::cell::{Cell};
 use std::collections::hash_map::Entry;
@@ -29,25 +29,21 @@ use super::abs_domain::{AbstractElem, Lift};
 // (which is likely to yield a subtle off-by-one error).
 mod indexes {
     use core::nonzero::NonZero;
-    use rustc_data_structures::indexed_vec::NodeIndex;
+    use rustc_data_structures::indexed_vec::Idx;
 
     macro_rules! new_index {
         ($Index:ident) => {
-            #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
+            #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
             pub struct $Index(NonZero<usize>);
 
             impl $Index {
             }
 
-            impl NodeIndex for $Index {
-            }
-            impl From<usize> for $Index {
-                fn from(idx: usize) -> Self {
+            impl Idx for $Index {
+                fn new(idx: usize) -> Self {
                     unsafe { $Index(NonZero::new(idx + 1)) }
                 }
-            }
-            impl Into<usize> for $Index {
-                fn into(self) -> usize {
+                fn index(self) -> usize {
                     *self.0 - 1
                 }
             }
@@ -317,7 +313,7 @@ impl<'tcx> MovePathLookup<'tcx> {
         i
     }
 
-    fn lookup_or_generate<I: NodeIndex>(vec: &mut IndexVec<I, Option<MovePathIndex>>,
+    fn lookup_or_generate<I: Idx>(vec: &mut IndexVec<I, Option<MovePathIndex>>,
                                   idx: I,
                                   next_index: &mut MovePathIndex)
                                   -> Lookup<MovePathIndex> {

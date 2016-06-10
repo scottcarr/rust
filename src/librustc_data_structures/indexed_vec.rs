@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::fmt::Debug;
 use std::iter::{self, FromIterator};
 use std::slice;
 use std::marker::PhantomData;
@@ -20,7 +21,7 @@ use rustc_serialize as serialize;
 /// Represents some newtyped `usize` wrapper.
 ///
 /// (purpose: avoid mixing indexes for different bitvector domains.)
-pub trait Idx: Copy + 'static {
+pub trait Idx: Copy + 'static + Eq + Debug {
     fn new(usize) -> Self;
     fn index(self) -> usize;
 }

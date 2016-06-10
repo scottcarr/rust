@@ -17,6 +17,7 @@
 use super::Graph;
 use super::iterate::reverse_post_order;
 use super::node_vec::NodeVec;
+use super::super::indexed_vec::Idx;
 
 use std::fmt;
 
@@ -162,7 +163,7 @@ impl<G: Graph> Dominators<G> {
             NodeVec::from_default_with_len(self.immediate_dominators.len());
         let mut root = None;
         for (index, immed_dom) in self.immediate_dominators.iter().enumerate() {
-            let node = G::Node::from(index);
+            let node = G::Node::new(index);
             match *immed_dom {
                 None => { /* node not reachable */ }
                 Some(immed_dom) => {

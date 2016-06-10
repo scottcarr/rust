@@ -12,7 +12,6 @@ use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-use rustc_data_structures::graph_algorithms::NodeIndex;
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -171,12 +170,6 @@ impl From<usize> for BasicBlock {
 }
 impl Into<usize> for BasicBlock {
     fn into(self: BasicBlock) -> usize {
-        self.index()
-    }
-}
-
-impl NodeIndex for BasicBlock {
-    fn as_usize(self) -> usize {
         self.index()
     }
 }

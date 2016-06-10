@@ -14,6 +14,7 @@ use std::ops::{Index, IndexMut};
 pub use std::slice::Iter;
 
 use super::Graph;
+use super::super::indexed_vec::Idx;
 
 #[derive(Clone, Debug)]
 pub struct NodeVec<G: Graph, T> {
@@ -52,7 +53,7 @@ impl<G: Graph, T> NodeVec<G, T> {
         where F: FnMut(G::Node) -> T
     {
         NodeVec {
-            vec: (0..num_nodes).map(G::Node::from).map(f).collect(),
+            vec: (0..num_nodes).map(G::Node::new).map(f).collect(),
             graph: PhantomData,
         }
     }
@@ -70,14 +71,14 @@ impl<G: Graph, T> Index<G::Node> for NodeVec<G, T> {
     type Output = T;
 
     fn index(&self, index: G::Node) -> &T {
-        let index: usize = index.into();
+        let index: usize = index.index();
         &self.vec[index]
     }
 }
 
 impl<G: Graph, T> IndexMut<G::Node> for NodeVec<G, T> {
     fn index_mut(&mut self, index: G::Node) -> &mut T {
-        let index: usize = index.into();
+        let index: usize = index.index();
         &mut self.vec[index]
     }
 }

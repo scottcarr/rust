@@ -11,7 +11,7 @@
 use std::cell::{Ref, RefCell};
 use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::graph_algorithms::dominators::{Dominators, dominators};
-//use mir::mir_cfg::MirCfg;
+use mir::mir_cfg::MirCfg;
 
 use mir::repr::{Mir, BasicBlock};
 
@@ -20,17 +20,17 @@ use rustc_serialize as serialize;
 #[derive(Clone)]
 pub struct Cache {
     predecessors: RefCell<Option<IndexVec<BasicBlock, Vec<BasicBlock>>>>,
-    //dominators: RefCell<Option<Dominators<Mir<'tcx>>>>,
+    dominators: RefCell<Option<Dominators<MirCfg>>>,
 }
 
 
-impl<'a> serialize::Encodable for Cache {
+impl serialize::Encodable for Cache {
     fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         serialize::Encodable::encode(&(), s)
     }
 }
 
-impl<'a> serialize::Decodable for Cache {
+impl serialize::Decodable for Cache {
     fn decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
         serialize::Decodable::decode(d).map(|_v: ()| Self::new())
     }
@@ -40,7 +40,7 @@ impl Cache {
     pub fn new() -> Self {
         Cache {
             predecessors: RefCell::new(None),
-            //dominators: RefCell::new(None),
+            dominators: RefCell::new(None),
         }
     }
 
@@ -57,14 +57,12 @@ impl Cache {
         Ref::map(self.predecessors.borrow(), |p| p.as_ref().unwrap())
     }
 
-    //pub fn dominators<'a>(&self, mir: &Mir<'a>) -> Ref<Dominators<Mir<'a>>> {
-    pub fn dominators<'a>(&self, mir: &Mir<'a>) -> Dominators<Mir<'a>> {
-        //if self.dominators.borrow().is_none() {
-        //    *self.dominators.borrow_mut() = Some(calculate_dominators(mir, self));
-        //}
+    pub fn dominators(&self, mir: &Mir) -> Ref<Dominators<MirCfg>> {
+        if self.dominators.borrow().is_none() {
+            *self.dominators.borrow_mut() = Some(calculate_dominators(mir, self));
+        }
 
-        //Ref::map(self.dominators.borrow(), |p| p.as_ref().unwrap())
-        dominators(mir)
+        Ref::map(self.dominators.borrow(), |p| p.as_ref().unwrap())
     }
 }
 
@@ -81,3 +79,7 @@ fn calculate_predecessors(mir: &Mir) -> IndexVec<BasicBlock, Vec<BasicBlock>> {
     result
 }
 
+fn calculate_dominators(mir: &Mir, cache: &Cache) -> Dominators<MirCfg> {
+    let m = MirCfg::new(mir, cache);
+    dominators(&m)
+}

@@ -12,8 +12,6 @@ use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-use rustc_data_structures::graph_algorithms::dominators::Dominators;
-use rustc_data_structures::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors};
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -28,7 +26,6 @@ use std::{iter, u32};
 use std::ops::{Index, IndexMut};
 use syntax::ast::{self, Name};
 use syntax::codemap::Span;
-use std;
 
 use super::cache::Cache;
 
@@ -96,7 +93,7 @@ pub struct Mir<'tcx> {
     pub span: Span,
 
     /// A cache for various calculations
-    cache: Cache,
+    cache: Cache
 }
 
 /// where execution begins
@@ -146,12 +143,6 @@ impl<'tcx> Mir<'tcx> {
     #[inline]
     pub fn predecessors_for(&self, bb: BasicBlock) -> Ref<Vec<BasicBlock>> {
         Ref::map(self.predecessors(), |p| &p[bb])
-    }
-
-    #[inline]
-    //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
-    pub fn dominators(&self) -> Dominators<Self> {
-        self.cache.dominators(self)
     }
 }
 
@@ -1175,43 +1166,4 @@ fn node_to_string(node_id: ast::NodeId) -> String {
 
 fn item_path_str(def_id: DefId) -> String {
     ty::tls::with(|tcx| tcx.item_path_str(def_id))
-}
-
-impl<'tcx> Graph for Mir<'tcx> {
-
-    type Node = BasicBlock;
-
-    fn num_nodes(&self) -> usize { self.basic_blocks.len() }
-
-    fn start_node(&self) -> Self::Node { START_BLOCK }
-
-    fn predecessors<'graph>(&'graph self, node: Self::Node)
-                            -> <Self as GraphPredecessors<'graph>>::Iter
-    {
-        //self.predecessors_for(node).iter().cloned()
-        panic!("not implemented!");
-    }
-    fn successors<'graph>(&'graph self, node: Self::Node)
-                            -> <Self as GraphSuccessors<'graph>>::Iter
-    {
-        //match self.basic_blocks[node].terminator {
-        //    Some(term) => {
-        //        term.successors().iter().cloned()
-        //    },
-        //    _ => vec![].iter().clone()
-        //}
-        panic!("not implemented!");
-    }
-}
-
-impl<'a, 'b> GraphPredecessors<'b> for Mir<'a> {
-    type Item = BasicBlock;
-    //type Iter = std::slice::Iter<'b, BasicBlock>;
-    type Iter = iter::Cloned<std::slice::Iter<'b, BasicBlock>>;
-}
-
-impl<'a, 'b>  GraphSuccessors<'b> for Mir<'a> {
-    type Item = BasicBlock;
-    type Iter = iter::Cloned<std::slice::Iter<'b, BasicBlock>>;
-    //type Iter = std::slice::Iter<'b, BasicBlock>;
 }

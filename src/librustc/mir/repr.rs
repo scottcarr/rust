@@ -12,6 +12,8 @@ use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
+use rustc_data_structures::graph_algorithms::dominators::{Dominators, dominators};
+use rustc_data_structures::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors};
 use hir::def_id::DefId;
 use ty::subst::Substs;
 use ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
@@ -144,6 +146,16 @@ impl<'tcx> Mir<'tcx> {
     pub fn predecessors_for(&self, bb: BasicBlock) -> Ref<Vec<BasicBlock>> {
         Ref::map(self.predecessors(), |p| &p[bb])
     }
+<<<<<<< HEAD
+=======
+
+    #[inline]
+    //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
+    pub fn dominators(&self) -> Dominators<Self> {
+        //self.cache.dominators(self)
+        dominators(self)
+    }
+>>>>>>> 1cc95c9c198110db2840e76e0a00015ac39785f8
 }
 
 impl<'tcx> Index<BasicBlock> for Mir<'tcx> {
@@ -1166,4 +1178,33 @@ fn node_to_string(node_id: ast::NodeId) -> String {
 
 fn item_path_str(def_id: DefId) -> String {
     ty::tls::with(|tcx| tcx.item_path_str(def_id))
+}
+impl<'tcx> Graph for Mir<'tcx> {
+
+    type Node = BasicBlock;
+
+    fn num_nodes(&self) -> usize { self.basic_blocks.len() }
+
+    fn start_node(&self) -> Self::Node { START_BLOCK }
+
+    fn predecessors<'graph>(&'graph self, node: Self::Node)
+                            -> <Self as GraphPredecessors<'graph>>::Iter
+    {
+        self.predecessors_for(node).clone().into_iter()
+    }
+    fn successors<'graph>(&'graph self, node: Self::Node)
+                          -> <Self as GraphSuccessors<'graph>>::Iter
+    {
+        self.basic_blocks[node].terminator().successors().into_owned().into_iter()
+    }
+}
+
+impl<'a, 'b> GraphPredecessors<'b> for Mir<'a> {
+    type Item = BasicBlock;
+    type Iter = std::vec::IntoIter<BasicBlock>;
+}
+
+impl<'a, 'b>  GraphSuccessors<'b> for Mir<'a> {
+    type Item = BasicBlock;
+    type Iter = std::vec::IntoIter<BasicBlock>;
 }

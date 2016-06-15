@@ -12,7 +12,7 @@ use graphviz::IntoCow;
 use middle::const_val::ConstVal;
 use rustc_const_math::{ConstUsize, ConstInt, ConstMathErr};
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
-use rustc_data_structures::graph_algorithms::dominators::Dominators;
+use rustc_data_structures::graph_algorithms::dominators::{Dominators, dominators};
 use rustc_data_structures::graph_algorithms::{Graph, GraphPredecessors, GraphSuccessors};
 use hir::def_id::DefId;
 use ty::subst::Substs;
@@ -151,7 +151,8 @@ impl<'tcx> Mir<'tcx> {
     #[inline]
     //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
     pub fn dominators(&self) -> Dominators<Self> {
-        self.cache.dominators(self)
+        //self.cache.dominators(self)
+        dominators(self)
     }
 }
 
@@ -1188,30 +1189,21 @@ impl<'tcx> Graph for Mir<'tcx> {
     fn predecessors<'graph>(&'graph self, node: Self::Node)
                             -> <Self as GraphPredecessors<'graph>>::Iter
     {
-        //self.predecessors_for(node).iter().cloned()
-        panic!("not implemented!");
+        self.predecessors_for(node).clone().into_iter()
     }
     fn successors<'graph>(&'graph self, node: Self::Node)
-                            -> <Self as GraphSuccessors<'graph>>::Iter
+                          -> <Self as GraphSuccessors<'graph>>::Iter
     {
-        //match self.basic_blocks[node].terminator {
-        //    Some(term) => {
-        //        term.successors().iter().cloned()
-        //    },
-        //    _ => vec![].iter().clone()
-        //}
-        panic!("not implemented!");
+        self.basic_blocks[node].terminator().successors().into_owned().into_iter()
     }
 }
 
 impl<'a, 'b> GraphPredecessors<'b> for Mir<'a> {
     type Item = BasicBlock;
-    //type Iter = std::slice::Iter<'b, BasicBlock>;
-    type Iter = iter::Cloned<std::slice::Iter<'b, BasicBlock>>;
+    type Iter = std::vec::IntoIter<BasicBlock>;
 }
 
 impl<'a, 'b>  GraphSuccessors<'b> for Mir<'a> {
     type Item = BasicBlock;
-    type Iter = iter::Cloned<std::slice::Iter<'b, BasicBlock>>;
-    //type Iter = std::slice::Iter<'b, BasicBlock>;
+    type Iter = std::vec::IntoIter<BasicBlock>;
 }

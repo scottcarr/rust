@@ -10,8 +10,6 @@
 
 use std::cell::{Ref, RefCell};
 use rustc_data_structures::indexed_vec::IndexVec;
-use rustc_data_structures::graph_algorithms::dominators::{Dominators, dominators};
-//use mir::mir_cfg::MirCfg;
 
 use mir::repr::{Mir, BasicBlock};
 
@@ -20,7 +18,6 @@ use rustc_serialize as serialize;
 #[derive(Clone)]
 pub struct Cache {
     predecessors: RefCell<Option<IndexVec<BasicBlock, Vec<BasicBlock>>>>,
-    //dominators: RefCell<Option<Dominators<Mir<'tcx>>>>,
 }
 
 
@@ -40,7 +37,6 @@ impl Cache {
     pub fn new() -> Self {
         Cache {
             predecessors: RefCell::new(None),
-            //dominators: RefCell::new(None),
         }
     }
 
@@ -55,16 +51,6 @@ impl Cache {
         }
 
         Ref::map(self.predecessors.borrow(), |p| p.as_ref().unwrap())
-    }
-
-    //pub fn dominators<'a>(&self, mir: &Mir<'a>) -> Ref<Dominators<Mir<'a>>> {
-    pub fn dominators<'a>(&self, mir: &Mir<'a>) -> Dominators<Mir<'a>> {
-        //if self.dominators.borrow().is_none() {
-        //    *self.dominators.borrow_mut() = Some(calculate_dominators(mir, self));
-        //}
-
-        //Ref::map(self.dominators.borrow(), |p| p.as_ref().unwrap())
-        dominators(mir)
     }
 }
 

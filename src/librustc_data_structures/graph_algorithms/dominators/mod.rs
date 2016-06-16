@@ -16,8 +16,7 @@
 
 use super::Graph;
 use super::iterate::reverse_post_order;
-use super::node_vec::NodeVec;
-use super::super::indexed_vec::Idx;
+use super::super::indexed_vec::{IndexVec, Idx};
 
 use std::fmt;
 
@@ -40,13 +39,13 @@ pub fn dominators_given_rpo<G: Graph>(graph: &G,
     assert_eq!(rpo[0], start_node);
 
     // compute the post order index (rank) for each node
-    let mut post_order_rank: NodeVec<G, usize> = NodeVec::from_default(graph);
+    let mut post_order_rank: IndexVec<G::Node, usize> = IndexVec::from_elem_n(usize::default(), graph.num_nodes());
     for (index, node) in rpo.iter().rev().cloned().enumerate() {
         post_order_rank[node] = index;
     }
 
-    let mut immediate_dominators: NodeVec<G, Option<G::Node>> =
-        NodeVec::from_default(graph);
+    let mut immediate_dominators: IndexVec<G::Node, Option<G::Node>> =
+        IndexVec::from_elem_n(Option::default(), graph.num_nodes());
     immediate_dominators[start_node] = Some(start_node);
 
     let mut changed = true;
@@ -58,7 +57,7 @@ pub fn dominators_given_rpo<G: Graph>(graph: &G,
             for pred in graph.predecessors(node) {
                 if immediate_dominators[pred].is_some() { // (*)
                     // (*) dominators for `pred` have been calculated
-                    new_idom = intersect_opt(&post_order_rank,
+                    new_idom = intersect_opt::<G>(&post_order_rank,
                                              &immediate_dominators,
                                              new_idom,
                                              Some(pred));
@@ -78,8 +77,8 @@ pub fn dominators_given_rpo<G: Graph>(graph: &G,
     }
 }
 
-fn intersect_opt<G: Graph>(post_order_rank: &NodeVec<G, usize>,
-                           immediate_dominators: &NodeVec<G, Option<G::Node>>,
+fn intersect_opt<G: Graph>(post_order_rank: &IndexVec<G::Node, usize>,
+                           immediate_dominators: &IndexVec<G::Node, Option<G::Node>>,
                            node1: Option<G::Node>,
                            node2: Option<G::Node>)
                            -> Option<G::Node>
@@ -87,15 +86,15 @@ fn intersect_opt<G: Graph>(post_order_rank: &NodeVec<G, usize>,
     match (node1, node2) {
         (None, None) => None,
         (Some(n), None) | (None, Some(n)) => Some(n),
-        (Some(n1), Some(n2)) => Some(intersect(post_order_rank,
+        (Some(n1), Some(n2)) => Some(intersect::<G>(post_order_rank,
                                                immediate_dominators,
                                                n1,
                                                n2)),
     }
 }
 
-fn intersect<G: Graph>(post_order_rank: &NodeVec<G, usize>,
-                       immediate_dominators: &NodeVec<G, Option<G::Node>>,
+fn intersect<G: Graph>(post_order_rank: &IndexVec<G::Node, usize>,
+                       immediate_dominators: &IndexVec<G::Node, Option<G::Node>>,
                        mut node1: G::Node,
                        mut node2: G::Node)
                        -> G::Node
@@ -114,8 +113,8 @@ fn intersect<G: Graph>(post_order_rank: &NodeVec<G, usize>,
 
 #[derive(Clone, Debug)]
 pub struct Dominators<G: Graph> {
-    post_order_rank: NodeVec<G, usize>,
-    immediate_dominators: NodeVec<G, Option<G::Node>>,
+    post_order_rank: IndexVec<G::Node, usize>,
+    immediate_dominators: IndexVec<G::Node, Option<G::Node>>,
 }
 
 impl<G: Graph> Dominators<G> {
@@ -141,7 +140,7 @@ impl<G: Graph> Dominators<G> {
     pub fn mutual_dominator_node(&self, node1: G::Node, node2: G::Node) -> G::Node {
         assert!(self.is_reachable(node1), "node {:?} is not reachable", node1);
         assert!(self.is_reachable(node2), "node {:?} is not reachable", node2);
-        intersect(&self.post_order_rank, &self.immediate_dominators, node1, node2)
+        intersect::<G>(&self.post_order_rank, &self.immediate_dominators, node1, node2)
     }
 
     pub fn mutual_dominator<I>(&self, iter: I) -> Option<G::Node>
@@ -154,13 +153,14 @@ impl<G: Graph> Dominators<G> {
             })
     }
 
-    pub fn all_immediate_dominators(&self) -> &NodeVec<G, Option<G::Node>> {
+    pub fn all_immediate_dominators(&self) -> &IndexVec<G::Node, Option<G::Node>> {
         &self.immediate_dominators
     }
 
     pub fn dominator_tree(&self) -> DominatorTree<G> {
-        let mut children: NodeVec<G, Vec<G::Node>> =
-            NodeVec::from_default_with_len(self.immediate_dominators.len());
+        let elem: Vec<G::Node> = Vec::new();
+        let mut children: IndexVec<G::Node, Vec<G::Node>> =
+            IndexVec::from_elem_n(elem, self.immediate_dominators.len());
         let mut root = None;
         for (index, immed_dom) in self.immediate_dominators.iter().enumerate() {
             let node = G::Node::new(index);
@@ -204,7 +204,7 @@ impl<'dom, G: Graph> Iterator for Iter<'dom, G> {
 
 pub struct DominatorTree<G: Graph> {
     root: G::Node,
-    children: NodeVec<G, Vec<G::Node>>,
+    children: IndexVec<G::Node, Vec<G::Node>>,
 }
 
 impl<G: Graph> DominatorTree<G> {

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use super::Graph;
-use super::node_vec::NodeVec;
+use super::super::indexed_vec::IndexVec;
 
 #[cfg(test)]
 mod test;
@@ -22,7 +22,7 @@ pub fn post_order_from_to<G: Graph>(graph: &G,
                                     start_node: G::Node,
                                     end_node: Option<G::Node>)
                                     -> Vec<G::Node> {
-    let mut visited: NodeVec<G, bool> = NodeVec::from_default(graph);
+    let mut visited: IndexVec<G::Node, bool> = IndexVec::from_elem_n(false, graph.num_nodes());
     let mut result: Vec<G::Node> = Vec::with_capacity(graph.num_nodes());
     if let Some(end_node) = end_node {
         visited[end_node] = true;
@@ -34,7 +34,7 @@ pub fn post_order_from_to<G: Graph>(graph: &G,
 fn post_order_walk<G: Graph>(graph: &G,
                              node: G::Node,
                              result: &mut Vec<G::Node>,
-                             visited: &mut NodeVec<G, bool>) {
+                             visited: &mut IndexVec<G::Node, bool>) {
     if visited[node] {
         return;
     }
@@ -50,7 +50,7 @@ fn post_order_walk<G: Graph>(graph: &G,
 pub fn pre_order_walk<G: Graph>(graph: &G,
                              node: G::Node,
                              result: &mut Vec<G::Node>,
-                             visited: &mut NodeVec<G, bool>) {
+                             visited: &mut IndexVec<G::Node, bool>) {
     if visited[node] {
         return;
     }

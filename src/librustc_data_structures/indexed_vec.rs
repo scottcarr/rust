@@ -78,6 +78,13 @@ impl<I: Idx, T> IndexVec<I, T> {
     }
 
     #[inline]
+    pub fn from_elem_n(elem: T, n: usize) -> Self
+        where T: Clone
+    {
+        IndexVec { raw: vec![elem; n], _marker: PhantomData }
+    }
+
+    #[inline]
     pub fn push(&mut self, d: T) -> I {
         let idx = I::new(self.len());
         self.raw.push(d);

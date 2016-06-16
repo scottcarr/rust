@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::indexed_vec::Idx;
+use super::indexed_vec::{Idx, IndexVec};
 use core::marker::{PhantomData};
 pub use std::slice::Iter;
 use std::ops::{Index, IndexMut};
@@ -20,7 +20,7 @@ pub mod dominators;
 pub mod iterate;
 pub mod reachable;
 mod reference;
-pub mod node_vec;
+//pub mod node_vec;
 pub mod transpose;
 
 #[cfg(test)]
@@ -43,6 +43,9 @@ pub trait Graph
                             -> <Self as GraphSuccessors<'graph>>::Iter;
                             //-> NodeVec<Self, Self::Node>;
                             //-> std::slice::Iter<'graph, Self::Node>;
+    //fn from_default(&self) -> IndexVec<Self::Node, Self::Node> {
+    //    (0..self.num_nodes()).map(|| Self::Node::default()).collect()
+    //}
 }
 
 pub trait GraphPredecessors<'graph> {

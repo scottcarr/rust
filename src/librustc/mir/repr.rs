@@ -26,6 +26,7 @@ use std::cell::Ref;
 use std::fmt::{self, Debug, Formatter, Write};
 use std::{iter, u32};
 use std::ops::{Index, IndexMut};
+use std::vec::IntoIter;
 use syntax::ast::{self, Name};
 use syntax::codemap::Span;
 
@@ -146,16 +147,12 @@ impl<'tcx> Mir<'tcx> {
     pub fn predecessors_for(&self, bb: BasicBlock) -> Ref<Vec<BasicBlock>> {
         Ref::map(self.predecessors(), |p| &p[bb])
     }
-<<<<<<< HEAD
-=======
-
     #[inline]
     //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
     pub fn dominators(&self) -> Dominators<Self> {
         //self.cache.dominators(self)
         dominators(self)
     }
->>>>>>> 1cc95c9c198110db2840e76e0a00015ac39785f8
 }
 
 impl<'tcx> Index<BasicBlock> for Mir<'tcx> {
@@ -1201,10 +1198,10 @@ impl<'tcx> Graph for Mir<'tcx> {
 
 impl<'a, 'b> GraphPredecessors<'b> for Mir<'a> {
     type Item = BasicBlock;
-    type Iter = std::vec::IntoIter<BasicBlock>;
+    type Iter = IntoIter<BasicBlock>;
 }
 
 impl<'a, 'b>  GraphSuccessors<'b> for Mir<'a> {
     type Item = BasicBlock;
-    type Iter = std::vec::IntoIter<BasicBlock>;
+    type Iter = IntoIter<BasicBlock>;
 }

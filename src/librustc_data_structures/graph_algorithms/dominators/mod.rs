@@ -23,23 +23,19 @@ use std::fmt;
 #[cfg(test)]
 mod test;
 
-pub fn dominators<G: Graph>(graph: &G)
-                            -> Dominators<G>
-{
+pub fn dominators<G: Graph>(graph: &G) -> Dominators<G> {
     let start_node = graph.start_node();
     let rpo = reverse_post_order(graph, start_node);
     dominators_given_rpo(graph, &rpo)
 }
 
-pub fn dominators_given_rpo<G: Graph>(graph: &G,
-                                      rpo: &[G::Node])
-                                      -> Dominators<G>
-{
+pub fn dominators_given_rpo<G: Graph>(graph: &G, rpo: &[G::Node]) -> Dominators<G> {
     let start_node = graph.start_node();
     assert_eq!(rpo[0], start_node);
 
     // compute the post order index (rank) for each node
-    let mut post_order_rank: IndexVec<G::Node, usize> = IndexVec::from_elem_n(usize::default(), graph.num_nodes());
+    let mut post_order_rank: IndexVec<G::Node, usize> = IndexVec::from_elem_n(usize::default(),
+                                                                              graph.num_nodes());
     for (index, node) in rpo.iter().rev().cloned().enumerate() {
         post_order_rank[node] = index;
     }
@@ -55,12 +51,13 @@ pub fn dominators_given_rpo<G: Graph>(graph: &G,
         for &node in &rpo[1..] {
             let mut new_idom = None;
             for pred in graph.predecessors(node) {
-                if immediate_dominators[pred].is_some() { // (*)
+                if immediate_dominators[pred].is_some() {
+                    // (*)
                     // (*) dominators for `pred` have been calculated
                     new_idom = intersect_opt::<G>(&post_order_rank,
-                                             &immediate_dominators,
-                                             new_idom,
-                                             Some(pred));
+                                                  &immediate_dominators,
+                                                  new_idom,
+                                                  Some(pred));
                 }
             }
 
@@ -81,15 +78,11 @@ fn intersect_opt<G: Graph>(post_order_rank: &IndexVec<G::Node, usize>,
                            immediate_dominators: &IndexVec<G::Node, Option<G::Node>>,
                            node1: Option<G::Node>,
                            node2: Option<G::Node>)
-                           -> Option<G::Node>
-{
+                           -> Option<G::Node> {
     match (node1, node2) {
         (None, None) => None,
         (Some(n), None) | (None, Some(n)) => Some(n),
-        (Some(n1), Some(n2)) => Some(intersect::<G>(post_order_rank,
-                                               immediate_dominators,
-                                               n1,
-                                               n2)),
+        (Some(n1), Some(n2)) => Some(intersect::<G>(post_order_rank, immediate_dominators, n1, n2)),
     }
 }
 
@@ -97,8 +90,7 @@ fn intersect<G: Graph>(post_order_rank: &IndexVec<G::Node, usize>,
                        immediate_dominators: &IndexVec<G::Node, Option<G::Node>>,
                        mut node1: G::Node,
                        mut node2: G::Node)
-                       -> G::Node
-{
+                       -> G::Node {
     while node1 != node2 {
         while post_order_rank[node1] < post_order_rank[node2] {
             node1 = immediate_dominators[node1].unwrap();
@@ -129,7 +121,10 @@ impl<G: Graph> Dominators<G> {
 
     pub fn dominators(&self, node: G::Node) -> Iter<G> {
         assert!(self.is_reachable(node), "node {:?} is not reachable", node);
-        Iter { dominators: self, node: Some(node) }
+        Iter {
+            dominators: self,
+            node: Some(node),
+        }
     }
 
     pub fn is_dominated_by(&self, node: G::Node, dom: G::Node) -> bool {
@@ -138,19 +133,24 @@ impl<G: Graph> Dominators<G> {
     }
 
     pub fn mutual_dominator_node(&self, node1: G::Node, node2: G::Node) -> G::Node {
-        assert!(self.is_reachable(node1), "node {:?} is not reachable", node1);
-        assert!(self.is_reachable(node2), "node {:?} is not reachable", node2);
-        intersect::<G>(&self.post_order_rank, &self.immediate_dominators, node1, node2)
+        assert!(self.is_reachable(node1),
+                "node {:?} is not reachable",
+                node1);
+        assert!(self.is_reachable(node2),
+                "node {:?} is not reachable",
+                node2);
+        intersect::<G>(&self.post_order_rank,
+                       &self.immediate_dominators,
+                       node1,
+                       node2)
     }
 
     pub fn mutual_dominator<I>(&self, iter: I) -> Option<G::Node>
-        where I: IntoIterator<Item=G::Node>
+        where I: IntoIterator<Item = G::Node>
     {
         let mut iter = iter.into_iter();
         iter.next()
-            .map(|dom| {
-                iter.fold(dom, |dom, node| self.mutual_dominator_node(dom, node))
-            })
+            .map(|dom| iter.fold(dom, |dom, node| self.mutual_dominator_node(dom, node)))
     }
 
     pub fn all_immediate_dominators(&self) -> &IndexVec<G::Node, Option<G::Node>> {
@@ -165,7 +165,9 @@ impl<G: Graph> Dominators<G> {
         for (index, immed_dom) in self.immediate_dominators.iter().enumerate() {
             let node = G::Node::new(index);
             match *immed_dom {
-                None => { /* node not reachable */ }
+                None => {
+                    // node not reachable
+                }
                 Some(immed_dom) => {
                     if node == immed_dom {
                         root = Some(node);
@@ -175,13 +177,16 @@ impl<G: Graph> Dominators<G> {
                 }
             }
         }
-        DominatorTree { root: root.unwrap(), children: children }
+        DominatorTree {
+            root: root.unwrap(),
+            children: children,
+        }
     }
 }
 
 pub struct Iter<'dom, G: Graph + 'dom> {
     dominators: &'dom Dominators<G>,
-    node: Option<G::Node>
+    node: Option<G::Node>,
 }
 
 impl<'dom, G: Graph> Iterator for Iter<'dom, G> {
@@ -217,13 +222,16 @@ impl<G: Graph> DominatorTree<G> {
     }
 
     pub fn iter_children_of(&self, node: G::Node) -> IterChildrenOf<G> {
-        IterChildrenOf { tree: self, stack: vec![node] }
+        IterChildrenOf {
+            tree: self,
+            stack: vec![node],
+        }
     }
 }
 
 pub struct IterChildrenOf<'iter, G: Graph + 'iter> {
     tree: &'iter DominatorTree<G>,
-    stack: Vec<G::Node>
+    stack: Vec<G::Node>,
 }
 
 impl<'iter, G: Graph> Iterator for IterChildrenOf<'iter, G> {
@@ -241,7 +249,11 @@ impl<'iter, G: Graph> Iterator for IterChildrenOf<'iter, G> {
 
 impl<G: Graph> fmt::Debug for DominatorTree<G> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt::Debug::fmt(&DominatorTreeNode { tree: self, node: self.root }, fmt)
+        fmt::Debug::fmt(&DominatorTreeNode {
+                            tree: self,
+                            node: self.root,
+                        },
+                        fmt)
     }
 }
 
@@ -252,15 +264,19 @@ struct DominatorTreeNode<'tree, G: Graph + 'tree> {
 
 impl<'tree, G: Graph> fmt::Debug for DominatorTreeNode<'tree, G> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let subtrees: Vec<_> =
-            self.tree.children(self.node)
-                     .iter()
-                     .map(|&child| DominatorTreeNode { tree: self.tree, node: child })
-                     .collect();
+        let subtrees: Vec<_> = self.tree
+            .children(self.node)
+            .iter()
+            .map(|&child| {
+                DominatorTreeNode {
+                    tree: self.tree,
+                    node: child,
+                }
+            })
+            .collect();
         fmt.debug_tuple("")
-           .field(&self.node)
-           .field(&subtrees)
-           .finish()
+            .field(&self.node)
+            .field(&subtrees)
+            .finish()
     }
 }
-

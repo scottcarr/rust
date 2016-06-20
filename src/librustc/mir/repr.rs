@@ -172,18 +172,6 @@ impl<'tcx> IndexMut<BasicBlock> for Mir<'tcx> {
     }
 }
 
-impl From<usize> for BasicBlock {
-    fn from(n: usize) -> BasicBlock {
-        assert!(n < (u32::MAX as usize));
-        BasicBlock(n as u32)
-    }
-}
-impl Into<usize> for BasicBlock {
-    fn into(self: BasicBlock) -> usize {
-        self.index()
-    }
-}
-
 /// Grouped information about the source code origin of a MIR entity.
 /// Intended to be inspected by diagnostics and debuginfo.
 /// Most passes can work with it as a whole, within a single function.

@@ -19,7 +19,7 @@ use rustc::hir::map as ast_map;
 use rustc::hir::map::blocks::FnLikeNode;
 use rustc::middle::cstore::{self, InlinedItem};
 use rustc::traits;
-use rustc::hir::def::Def;
+use rustc::hir::def::{Def, PathResolution};
 use rustc::hir::def_id::DefId;
 use rustc::hir::pat_util::def_to_path;
 use rustc::ty::{self, Ty, TyCtxt, subst};
@@ -276,11 +276,11 @@ pub fn const_expr_to_pat<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                      .collect()), None),
 
         hir::ExprCall(ref callee, ref args) => {
-            let def = *tcx.def_map.borrow().get(&callee.id).unwrap();
+            let def = tcx.expect_def(callee.id);
             if let Vacant(entry) = tcx.def_map.borrow_mut().entry(expr.id) {
-               entry.insert(def);
+               entry.insert(PathResolution::new(def));
             }
-            let path = match def.full_def() {
+            let path = match def {
                 Def::Struct(def_id) => def_to_path(tcx, def_id),
                 Def::Variant(_, variant_did) => def_to_path(tcx, variant_did),
                 Def::Fn(..) | Def::Method(..) => return Ok(P(hir::Pat {
@@ -322,12 +322,9 @@ pub fn const_expr_to_pat<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         }
 
         hir::ExprPath(_, ref path) => {
-            let opt_def = tcx.def_map.borrow().get(&expr.id).map(|d| d.full_def());
-            match opt_def {
-                Some(Def::Struct(..)) | Some(Def::Variant(..)) =>
-                    PatKind::Path(path.clone()),
-                Some(Def::Const(def_id)) |
-                Some(Def::AssociatedConst(def_id)) => {
+            match tcx.expect_def(expr.id) {
+                Def::Struct(..) | Def::Variant(..) => PatKind::Path(path.clone()),
+                Def::Const(def_id) | Def::AssociatedConst(def_id) => {
                     let substs = Some(tcx.node_id_item_substs(expr.id).substs);
                     let (expr, _ty) = lookup_const_by_id(tcx, def_id, substs).unwrap();
                     return const_expr_to_pat(tcx, expr, pat_id, span);
@@ -714,21 +711,13 @@ pub fn eval_const_expr_partial<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         }
       }
       hir::ExprPath(..) => {
-          let opt_def = if let Some(def) = tcx.def_map.borrow().get(&e.id) {
-              // After type-checking, def_map contains definition of the
-              // item referred to by the path. During type-checking, it
-              // can contain the raw output of path resolution, which
-              // might be a partially resolved path.
-              // FIXME: There's probably a better way to make sure we don't
-              // panic here.
-              if def.depth != 0 {
-                  signal!(e, UnresolvedPath);
-              }
-              def.full_def()
-          } else {
-              signal!(e, NonConstPath);
-          };
-          match opt_def {
+          // This function can be used before type checking when not all paths are fully resolved.
+          // FIXME: There's probably a better way to make sure we don't panic here.
+          let resolution = tcx.expect_resolution(e.id);
+          if resolution.depth != 0 {
+              signal!(e, UnresolvedPath);
+          }
+          match resolution.base_def {
               Def::Const(def_id) |
               Def::AssociatedConst(def_id) => {
                   let substs = if let ExprTypeChecked = ty_hint {
@@ -956,10 +945,7 @@ fn infer<'a, 'tcx>(i: ConstInt,
         (&ty::TyInt(IntTy::I32), Infer(i)) => Ok(I32(i as i64 as i32)),
         (&ty::TyInt(IntTy::I64), Infer(i)) => Ok(I64(i as i64)),
         (&ty::TyInt(IntTy::Is), Infer(i)) => {
-            match ConstIsize::new(i as i64, tcx.sess.target.int_type) {
-                Ok(val) => Ok(Isize(val)),
-                Err(_) => Ok(Isize(ConstIsize::Is32(i as i64 as i32))),
-            }
+            Ok(Isize(ConstIsize::new_truncating(i as i64, tcx.sess.target.int_type)))
         },
 
         (&ty::TyInt(IntTy::I8), InferSigned(i)) => Ok(I8(i as i8)),
@@ -967,10 +953,7 @@ fn infer<'a, 'tcx>(i: ConstInt,
         (&ty::TyInt(IntTy::I32), InferSigned(i)) => Ok(I32(i as i32)),
         (&ty::TyInt(IntTy::I64), InferSigned(i)) => Ok(I64(i)),
         (&ty::TyInt(IntTy::Is), InferSigned(i)) => {
-            match ConstIsize::new(i, tcx.sess.target.int_type) {
-                Ok(val) => Ok(Isize(val)),
-                Err(_) => Ok(Isize(ConstIsize::Is32(i as i32))),
-            }
+            Ok(Isize(ConstIsize::new_truncating(i, tcx.sess.target.int_type)))
         },
 
         (&ty::TyUint(UintTy::U8), Infer(i)) => Ok(U8(i as u8)),
@@ -978,10 +961,7 @@ fn infer<'a, 'tcx>(i: ConstInt,
         (&ty::TyUint(UintTy::U32), Infer(i)) => Ok(U32(i as u32)),
         (&ty::TyUint(UintTy::U64), Infer(i)) => Ok(U64(i)),
         (&ty::TyUint(UintTy::Us), Infer(i)) => {
-            match ConstUsize::new(i, tcx.sess.target.uint_type) {
-                Ok(val) => Ok(Usize(val)),
-                Err(_) => Ok(Usize(ConstUsize::Us32(i as u32))),
-            }
+            Ok(Usize(ConstUsize::new_truncating(i, tcx.sess.target.uint_type)))
         },
         (&ty::TyUint(_), InferSigned(_)) => Err(IntermediateUnsignedNegative),
 
@@ -1063,20 +1043,14 @@ fn cast_const_int<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, val: ConstInt, ty: ty::
         ty::TyInt(ast::IntTy::I32) => Ok(Integral(I32(v as i64 as i32))),
         ty::TyInt(ast::IntTy::I64) => Ok(Integral(I64(v as i64))),
         ty::TyInt(ast::IntTy::Is) => {
-            match ConstIsize::new(v as i64, tcx.sess.target.int_type) {
-                Ok(val) => Ok(Integral(Isize(val))),
-                Err(_) => Ok(Integral(Isize(ConstIsize::Is32(v as i64 as i32)))),
-            }
+            Ok(Integral(Isize(ConstIsize::new_truncating(v as i64, tcx.sess.target.int_type))))
         },
         ty::TyUint(ast::UintTy::U8) => Ok(Integral(U8(v as u8))),
         ty::TyUint(ast::UintTy::U16) => Ok(Integral(U16(v as u16))),
         ty::TyUint(ast::UintTy::U32) => Ok(Integral(U32(v as u32))),
         ty::TyUint(ast::UintTy::U64) => Ok(Integral(U64(v))),
         ty::TyUint(ast::UintTy::Us) => {
-            match ConstUsize::new(v, tcx.sess.target.uint_type) {
-                Ok(val) => Ok(Integral(Usize(val))),
-                Err(_) => Ok(Integral(Usize(ConstUsize::Us32(v as u32)))),
-            }
+            Ok(Integral(Usize(ConstUsize::new_truncating(v, tcx.sess.target.uint_type))))
         },
         ty::TyFloat(ast::FloatTy::F64) => match val.erase_type() {
             Infer(u) => Ok(Float(F64(u as f64))),

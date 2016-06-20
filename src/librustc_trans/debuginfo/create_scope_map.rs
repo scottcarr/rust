@@ -51,7 +51,7 @@ pub fn create_scope_map(cx: &CrateContext,
     for arg in args {
         pat_util::pat_bindings(&arg.pat, |_, node_id, _, path1| {
             scope_stack.push(ScopeStackEntry { scope_metadata: fn_metadata,
-                                               name: Some(path1.node.unhygienize()) });
+                                               name: Some(path1.node) });
             scope_map.insert(node_id, fn_metadata);
         })
     }
@@ -131,8 +131,8 @@ fn make_mir_scope(ccx: &CrateContext,
     }
 
     let loc = span_start(ccx, scope_data.span);
-    let file_metadata = file_metadata(ccx, &loc.file.name);
     scopes[scope] = unsafe {
+    let file_metadata = file_metadata(ccx, &loc.file.name, &loc.file.abs_path);
         llvm::LLVMDIBuilderCreateLexicalBlock(
             DIB(ccx),
             parent_scope,
@@ -152,7 +152,7 @@ fn with_new_scope<F>(cx: &CrateContext,
 {
     // Create a new lexical scope and push it onto the stack
     let loc = span_start(cx, scope_span);
-    let file_metadata = file_metadata(cx, &loc.file.name);
+    let file_metadata = file_metadata(cx, &loc.file.name, &loc.file.abs_path);
     let parent_scope = scope_stack.last().unwrap().scope_metadata;
 
     let scope_metadata = unsafe {
@@ -260,7 +260,7 @@ fn walk_pattern(cx: &CrateContext,
             // N.B.: this comparison must be UNhygienic... because
             // gdb knows nothing about the context, so any two
             // variables with the same name will cause the problem.
-            let name = path1.node.unhygienize();
+            let name = path1.node;
             let need_new_scope = scope_stack
                 .iter()
                 .any(|entry| entry.name == Some(name));
@@ -268,7 +268,7 @@ fn walk_pattern(cx: &CrateContext,
             if need_new_scope {
                 // Create a new lexical scope and push it onto the stack
                 let loc = span_start(cx, pat.span);
-                let file_metadata = file_metadata(cx, &loc.file.name);
+                let file_metadata = file_metadata(cx, &loc.file.name, &loc.file.abs_path);
                 let parent_scope = scope_stack.last().unwrap().scope_metadata;
 
                 let scope_metadata = unsafe {

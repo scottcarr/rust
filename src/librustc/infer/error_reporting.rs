@@ -1357,17 +1357,7 @@ impl<'a, 'gcx, 'tcx> Rebuilder<'a, 'gcx, 'tcx> {
                     ty_queue.push(&mut_ty.ty);
                 }
                 hir::TyPath(ref maybe_qself, ref path) => {
-                    let a_def = match self.tcx.def_map.borrow().get(&cur_ty.id) {
-                        None => {
-                            self.tcx
-                                .sess
-                                .fatal(&format!(
-                                        "unbound path {}",
-                                        pprust::path_to_string(path)))
-                        }
-                        Some(d) => d.full_def()
-                    };
-                    match a_def {
+                    match self.tcx.expect_def(cur_ty.id) {
                         Def::Enum(did) | Def::TyAlias(did) | Def::Struct(did) => {
                             let generics = self.tcx.lookup_item_type(did).generics;
 
@@ -1866,11 +1856,10 @@ fn lifetimes_in_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
         },
         None => None
     };
-    if method_id_opt.is_some() {
-        let method_id = method_id_opt.unwrap();
+    if let Some(method_id) = method_id_opt {
         let parent = tcx.map.get_parent(method_id);
-        match tcx.map.find(parent) {
-            Some(node) => match node {
+        if let Some(node) = tcx.map.find(parent) {
+            match node {
                 ast_map::NodeItem(item) => match item.node {
                     hir::ItemImpl(_, _, ref gen, _, _, _) => {
                         taken.extend_from_slice(&gen.lifetimes);
@@ -1878,8 +1867,7 @@ fn lifetimes_in_scope<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
                     _ => ()
                 },
                 _ => ()
-            },
-            None => ()
+            }
         }
     }
     return taken;
@@ -1948,4 +1936,3 @@ fn name_to_dummy_lifetime(name: ast::Name) -> hir::Lifetime {
                     span: codemap::DUMMY_SP,
                     name: name }
 }
-

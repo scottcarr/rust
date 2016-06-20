@@ -2389,9 +2389,11 @@ impl Clean<Vec<Item>> for doctree::Import {
         // We consider inlining the documentation of `pub use` statements, but we
         // forcefully don't inline if this is not public or if the
         // #[doc(no_inline)] attribute is present.
+        // Don't inline doc(hidden) imports so they can be stripped at a later stage.
         let denied = self.vis != hir::Public || self.attrs.iter().any(|a| {
             &a.name()[..] == "doc" && match a.meta_item_list() {
-                Some(l) => attr::contains_name(l, "no_inline"),
+                Some(l) => attr::contains_name(l, "no_inline") ||
+                           attr::contains_name(l, "hidden"),
                 None => false,
             }
         });
@@ -2631,7 +2633,7 @@ fn resolve_type(cx: &DocContext,
             };
         }
     };
-    let def = tcx.def_map.borrow().get(&id).expect("unresolved id not in defmap").full_def();
+    let def = tcx.expect_def(id);
     debug!("resolve_type: def={:?}", def);
 
     let is_generic = match def {
@@ -2700,7 +2702,7 @@ fn resolve_use_source(cx: &DocContext, path: Path, id: ast::NodeId) -> ImportSou
 
 fn resolve_def(cx: &DocContext, id: ast::NodeId) -> Option<DefId> {
     cx.tcx_opt().and_then(|tcx| {
-        tcx.def_map.borrow().get(&id).map(|d| register_def(cx, d.full_def()))
+        tcx.expect_def_or_none(id).map(|def| register_def(cx, def))
     })
 }
 

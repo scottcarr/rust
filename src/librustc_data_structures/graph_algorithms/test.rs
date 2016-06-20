@@ -14,7 +14,7 @@ use std::slice;
 use std::iter;
 
 use super::{Graph, GraphPredecessors, GraphSuccessors};
-use super::super::index_vec::IndexVec;
+use super::super::indexed_vec::IndexVec;
 
 pub struct TestGraph {
     num_nodes: usize,

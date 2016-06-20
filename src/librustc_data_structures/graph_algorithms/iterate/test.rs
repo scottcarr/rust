@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::test::TestGraph;
-use super::transpose::TransposedGraph;
+use super::super::test::TestGraph;
+use super::super::transpose::TransposedGraph;
 
 use super::*;
 

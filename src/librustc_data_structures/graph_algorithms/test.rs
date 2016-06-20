@@ -13,7 +13,8 @@ use std::cmp::max;
 use std::slice;
 use std::iter;
 
-use super::{Graph, GraphPredecessors, GraphSuccessors, NodeIndex};
+use super::{Graph, GraphPredecessors, GraphSuccessors};
+use super::super::NodeIndex;
 
 pub struct TestGraph {
     num_nodes: usize,

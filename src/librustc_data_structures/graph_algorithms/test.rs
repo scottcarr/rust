@@ -14,7 +14,7 @@ use std::slice;
 use std::iter;
 
 use super::{Graph, GraphPredecessors, GraphSuccessors};
-use super::super::NodeIndex;
+use super::super::index_vec::IndexVec;
 
 pub struct TestGraph {
     num_nodes: usize,
@@ -77,5 +77,5 @@ impl<'graph> GraphSuccessors<'graph> for TestGraph {
     type Iter = iter::Cloned<slice::Iter<'graph, usize>>;
 }
 
-impl NodeIndex for usize {
-}
+// impl NodeIndex for usize {
+// }

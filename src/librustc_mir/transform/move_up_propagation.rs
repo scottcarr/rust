@@ -21,68 +21,48 @@ pub struct MoveUpPropagation;
 
 impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
     fn run_pass<'a>(&mut self,
-                    _tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                    _src: MirSource,
+                    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                    src: MirSource,
                     mir: &mut Mir<'tcx>) {
+        let node_id = src.item_id();
+        let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
+        debug!("move-up-propagation on {:?}", node_path);
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
-        let candidates = tduf.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
-        for (&tmp, _) in candidates {
-            // do something
-            debug!("{:?} has only one use!", tmp);
-            if let Some(v) = tduf.defs.get(&tmp) {
-                debug!("{:?} has {} defs", tmp, v.len());
-            } else {
-                debug!("we didn't have any defs for {:?}?", tmp);
-            }
+        let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
+        for (tmp, lists) in candidates {
+            debug!("{:?} is a candidate", tmp);
+            // check if
+            // -- Def: L = foo
+            // post dominates
+            // -- Use: bar = ... L ...
+            // if so,
+            // replace Def wit
+            // -- Repl: bar = ... foo ...
+
+            // I wonder if there should be a NOP to preserve indexes ...
+            
         }
+    
+        // let candidates = tduf.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
+        // // for (&tmp, _) in candidates {
+        // //     // do something
+        // //     debug!("{:?} has only one use!", tmp);
+        // //     if let Some(v) = tduf.defs.get(&tmp) {
+        // //         debug!("{:?} has {} defs", tmp, v.len());
+        // //     } else {
+        // //         debug!("we didn't have any defs for {:?}?", tmp);
+        // //     }
+        // // }
+        // let c = candidates.filter(|&(tmp, _)| { 
+        //     if let Some(defs) = tduf.defs.get(tmp) {
+        //         defs.len() == 1
+        //     } else {
+        //         false
+        //     }
+        // });
     }
 }
-
-// enum StopCondition {
-//     DontStop,
-//     TempBorrowed,
-//     TempUsed,
-//     FoundDef,
-// }
-
-// fn try_optimze(stmt_idx: usize, bb: BasicBlock) {
-//     walk_backwards(stmt_idx, bb);
-// }
-
-// fn walk_backwards(stmt_idx: usize, bb: BasicBlock) -> StopCondition {
-//     let bail = StopCondition::DontStop;
-//     while stmt_idx >= 0 and StopCondition::DontStop == bail {
-//         bail = visit(bb.statements[stmt_idx]);
-//         stmt_idx -= 1;
-//     }
-//     if stmt_idx == -1 {
-//         for p in mir.predecessors_for(bb) {
-//             bail = walk_backwards(p.statements.len()-1, p)
-//             if bail { break; }
-//         }
-//     }
-//     bail
-// }
-
-// fn walk_forwards(stmt_idx: usize, bb: BasicBlock) -> StopCondition {
-//     let bail = StopCondition::DontStop;
-//     while stmt_idx < bb.statements.len() and StopCondition::DontStop == bail {
-//         bail = visit(bb.statements[stmt_idx]);
-//         stmt_idx -= 1;
-//     }
-//     if stmt_idx == bb.statements.len() - 1 {
-//         for p in mir.predecessors_for(bb) {
-//             bail = walk_forwards(0, p)
-//             if bail { break; }
-//         }
-//     }
-//     bail
-// }
-
-// fn visit(stmt: Statement) -> StopCondition {
-//     StopCondition::Success
-// }
 
 impl Pass for MoveUpPropagation {}
 
@@ -93,8 +73,8 @@ struct UseDefLocation {
 }
 impl UseDefLocation {
     fn print(&self, mir: &Mir) {
-        let ref bb = mir[e.basic_block];
-        match e.inner_location {
+        let ref bb = mir[self.basic_block];
+        match self.inner_location {
             StatementIndexOrTerminator::StatementIndex(idx) => {
                 debug!("{:?}", bb.statements[idx]);
             },
@@ -111,9 +91,22 @@ enum StatementIndexOrTerminator {
     Terminator,
 }
 
+struct DefUseLists {
+    pub defs: Vec<UseDefLocation>,
+    pub uses: Vec<UseDefLocation>,
+}
+
+impl DefUseLists {
+    fn new() -> Self {
+        DefUseLists{
+            uses: vec![],
+            defs: vec![],
+        }
+    }
+}
+
 struct TempDefUseFinder {
-    pub defs: HashMap<Temp, Vec<UseDefLocation>>,
-    pub uses: HashMap<Temp, Vec<UseDefLocation>>,
+    pub lists: HashMap<Temp, DefUseLists>,
     curr_basic_block: BasicBlock,
     statement_index: usize,
     kind: AccessKind,
@@ -128,8 +121,7 @@ enum AccessKind {
 impl TempDefUseFinder {
     fn new(mir: &Mir) -> Self {
         let mut tuc = TempDefUseFinder {
-            defs: HashMap::new(),
-            uses: HashMap::new(),
+            lists: HashMap::new(),
             curr_basic_block: START_BLOCK,
             statement_index: 0,
             kind: AccessKind::Def, // not necessarily right but it'll get updated when we see an assign
@@ -140,10 +132,6 @@ impl TempDefUseFinder {
     }
     fn add_to_map_if_temp<'a>(&mut self,
                           lvalue: &Lvalue<'a>) {
-        let mut hashmap = match self.kind {
-            AccessKind::Def => &mut self.defs,
-            AccessKind::Use => &mut self.uses,
-        };
         match lvalue {
             &Lvalue::Temp(tmp_id) => {
                 let loc = if self.is_in_terminator {
@@ -151,24 +139,32 @@ impl TempDefUseFinder {
                 } else {
                     StatementIndexOrTerminator::StatementIndex(self.statement_index)
                 };
-                hashmap.entry(tmp_id).or_insert(vec![]).push(UseDefLocation {
+                let ent = UseDefLocation {
                     basic_block: self.curr_basic_block,
                     inner_location: loc,
-                });
+                };
+                match self.kind {
+                    AccessKind::Def => self.lists.entry(tmp_id).or_insert(DefUseLists::new()).defs.push(ent),
+                    AccessKind::Use => self.lists.entry(tmp_id).or_insert(DefUseLists::new()).uses.push(ent),
+                };
             }
             _ => {}
         }
     }
     fn print(&self, mir: &Mir) {
-        for (k, v) in self.uses.iter() {
-            assert!(v.len() > 0); // every temp should have at least one use
+        for (k, ref v) in self.lists.iter() {
             debug!("{:?} uses:", k);
-            for e in v { e.print(mir); }
+            debug!("{:?}", v.uses);
+            // this assertion was wrong
+            // you can have an unused temporary, ex: the result of a call is never used
+            //assert!(v.uses.len() > 0); // every temp should have at least one use
+            v.uses.iter().map(|e| UseDefLocation::print(&e, mir)).count();
         }
-        for (k, v) in self.defs.iter() {
-            assert!(v.len() > 0); // every temp should have at least one def
+        for (k, ref v) in self.lists.iter() {
             debug!("{:?} defs:", k);
-            for e in v { e.print(mir); }
+            debug!("{:?}", v.defs);
+            assert!(v.defs.len() > 0); // every temp should have at least one def
+            v.defs.iter().map(|e| UseDefLocation::print(&e, mir)).count();
         }
     }
 }

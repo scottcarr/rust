@@ -24,23 +24,20 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     _src: MirSource,
                     mir: &mut Mir<'tcx>) {
         let tuc = TempDefUseFinder::new(mir);
-        let candidates = tuc.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
-        for (&tmp, _) in candidates {
-            // do something
-            debug!("{:?} has only one use!", tmp);
-            if let Some(v) = tuc.defs.get(&tmp) {
-                debug!("{:?} has {} defs", tmp, v.len());
-            } else {
-                debug!("we didn't have any defs for {:?}?", tmp);
-            }
-
+        for (k, v) in tuc.uses.iter() {
+            debug!("{:?} uses: {:?}", k, v);
         }
-        // for bb in mir.basic_blocks_mut() {
-        //     for (i, stmt) in bb.statements().iter().enumerate() {
-        //         if let Statement(_,
-        //             StatementKind(Assign(lval, TempDecl(tmpId)))) = stmt {
-        //             try_optimze(i, bb);
-        //         }
+        for (k, v) in tuc.defs.iter() {
+            debug!("{:?} defs: {:?}", k, v);
+        }
+        // let candidates = tuc.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
+        // for (&tmp, _) in candidates {
+        //     // do something
+        //     debug!("{:?} has only one use!", tmp);
+        //     if let Some(v) = tuc.defs.get(&tmp) {
+        //         debug!("{:?} has {} defs", tmp, v.len());
+        //     } else {
+        //         debug!("we didn't have any defs for {:?}?", tmp);
         //     }
         // }
     }
@@ -93,6 +90,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
 
 impl Pass for MoveUpPropagation {}
 
+#[derive(Debug)]
 struct StatementLocation {
     basic_block: BasicBlock,
     statement_index: usize,
@@ -103,6 +101,12 @@ struct TempDefUseFinder {
     pub uses: HashMap<Temp, Vec<StatementLocation>>,
     curr_basic_block: BasicBlock,
     statement_index: usize,
+    kind: AccessKind,
+}
+
+enum AccessKind {
+    Def,
+    Use,
 }
 
 impl TempDefUseFinder {
@@ -112,9 +116,35 @@ impl TempDefUseFinder {
             uses: HashMap::new(),
             curr_basic_block: START_BLOCK,
             statement_index: 0,
+            kind: AccessKind::Def, // not necessarily right but it'll get updated when we see an assign
         };
         tuc.visit_mir(mir);
         tuc
+    }
+    fn add_to_map_if_temp<'a>(&mut self,
+                          lvalue: &Lvalue<'a>) {
+        let mut hashmap = match self.kind {
+            AccessKind::Def => &mut self.defs,
+            AccessKind::Use => &mut self.uses,
+        };
+        match lvalue {
+            &Lvalue::Temp(tmp_id) => {
+                hashmap.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
+                    basic_block: self.curr_basic_block,
+                    statement_index: self.statement_index,
+                });
+            }
+            // &Lvalue::Projection(ref x) => {
+            //     let ref base = x.as_ref().base;
+            //     if let &Lvalue::Temp(tmp_id) = base {
+            //         hashmap.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
+            //             basic_block: self.curr_basic_block,
+            //             statement_index: self.statement_index,
+            //         });
+            //     }
+            // }
+            _ => {}
+        }
     }
 }
 impl<'a> Visitor<'a> for TempDefUseFinder {
@@ -124,35 +154,60 @@ impl<'a> Visitor<'a> for TempDefUseFinder {
         self.super_basic_block_data(block, data);
     }
     fn visit_statement(&mut self, block: BasicBlock, statement: &Statement<'a>) {
-        self.super_statement(block, statement);
+        //self.super_statement(block, statement);
+        //debug!("{:?}", statement);
+        match statement.kind {
+            StatementKind::Assign(ref lvalue, ref rvalue) => {
+                self.kind = AccessKind::Def;
+                self.visit_lvalue(lvalue, LvalueContext::Store);
+                self.kind = AccessKind::Use;
+                self.visit_rvalue(rvalue);
+            },
+        }
         self.statement_index += 1;
     }
     fn visit_lvalue(&mut self, lvalue: &Lvalue<'a>, context: LvalueContext) {
-        match context {
-            LvalueContext::Store => {
-                if let &Lvalue::Temp(tmp_id) = lvalue {
-                    self.defs.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
-                        basic_block: self.curr_basic_block,
-                        statement_index: self.statement_index,
-                    });
-                }
-            }
-            // LvalueContext::Call => {},
-            // LvalueContext::Drop => {},
-            // LvalueContext::Inspect => {},
-            // LvalueContext::Borrow { region: Region, kind: BorrowKind },
-            // LvalueContext::Slice { from_start: usize, from_end: usize },
-            // LvalueContext::Projection => {},
-            // LvalueContext::Consume => {},
-            _ => {
-                if let &Lvalue::Temp(tmp_id) = lvalue {
-                    self.uses.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
-                        basic_block: self.curr_basic_block,
-                        statement_index: self.statement_index,
-                    });
-                }
-            }
-        }
+        // match context {
+        //     LvalueContext::Store => {
+        //         // match lvalue {
+        //         //     &Lvalue::Temp(tmp_id) => {
+        //         //         self.defs.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
+        //         //             basic_block: self.curr_basic_block,
+        //         //             statement_index: self.statement_index,
+        //         //         });
+        //         //     }
+        //         //     &Lvalue::Projection(ref x) => {
+        //         //         // do something?
+        //         //         let ref base = x.as_ref().base;
+        //         //         if let &Lvalue::Temp(tmp_id) = base {
+        //         //             self.defs.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
+        //         //                 basic_block: self.curr_basic_block,
+        //         //                 statement_index: self.statement_index,
+        //         //             });
+        //         //         }
+        //         //     }
+        //         //     _ => {}
+        //         // }
+        //         self.add_to_map_if_temp(lvalue, AccessKind::Def);
+        //     }
+        //     // LvalueContext::Call => {},
+        //     // LvalueContext::Drop => {},
+        //     // LvalueContext::Inspect => {},
+        //     // LvalueContext::Borrow { region: Region, kind: BorrowKind },
+        //     // LvalueContext::Slice { from_start: usize, from_end: usize },
+        //     // LvalueContext::Projection => {},
+        //     // LvalueContext::Consume => {},
+        //     _ => {
+        //         // if let &Lvalue::Temp(tmp_id) = lvalue {
+        //         //     self.uses.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
+        //         //         basic_block: self.curr_basic_block,
+        //         //         statement_index: self.statement_index,
+        //         //     });
+        //         // }
+        //         self.add_to_map_if_temp(lvalue, AccessKind::Use);
+        //     }
+        // }
+        self.add_to_map_if_temp(lvalue);
         self.super_lvalue(lvalue, context);
     }
 }

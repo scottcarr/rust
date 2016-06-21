@@ -1112,6 +1112,7 @@ fn main() {
 ```
 
 Or in a generic context, an erroneous code example would look like:
+
 ```compile_fail
 fn some_func<T>(foo: T) {
     println!("{:?}", foo); // error: the trait `core::fmt::Debug` is not
@@ -1130,6 +1131,7 @@ we only call it with a parameter that does implement `Debug`, the compiler
 still rejects the function: It must work with all possible input types. In
 order to make this example compile, we need to restrict the generic type we're
 accepting:
+
 ```
 use std::fmt;
 
@@ -1146,11 +1148,10 @@ fn main() {
     // struct WithoutDebug;
     // some_func(WithoutDebug);
 }
+```
 
 Rust only looks at the signature of the called function, as such it must
 already specify all requirements that will be used for every type parameter.
-```
-
 "##,
 
 E0281: r##"
@@ -1381,6 +1382,7 @@ denotes this will cause this error.
 struct Foo<T> {
     foo: &'static T
 }
+```
 
 This will compile, because it has the constraint on the type parameter:
 
@@ -1439,6 +1441,51 @@ lint name). Ensure the attribute is of this form:
 #![allow(foo)] // ok!
 // or:
 #![allow(foo, foo2)] // ok!
+```
+"##,
+
+E0453: r##"
+A lint check attribute was overruled by a `forbid` directive set as an
+attribute on an enclosing scope, or on the command line with the `-F` option.
+
+Example of erroneous code:
+
+```compile_fail
+#![forbid(non_snake_case)]
+
+#[allow(non_snake_case)]
+fn main() {
+    let MyNumber = 2; // error: allow(non_snake_case) overruled by outer
+                      //        forbid(non_snake_case)
+}
+```
+
+The `forbid` lint setting, like `deny`, turns the corresponding compiler
+warning into a hard error. Unlike `deny`, `forbid` prevents itself from being
+overridden by inner attributes.
+
+If you're sure you want to override the lint check, you can change `forbid` to
+`deny` (or use `-D` instead of `-F` if the `forbid` setting was given as a
+command-line option) to allow the inner lint check attribute:
+
+```
+#![deny(non_snake_case)]
+
+#[allow(non_snake_case)]
+fn main() {
+    let MyNumber = 2; // ok!
+}
+```
+
+Otherwise, edit the code to pass the lint check, and remove the overruled
+attribute:
+
+```
+#![forbid(non_snake_case)]
+
+fn main() {
+    let my_number = 2;
+}
 ```
 "##,
 
@@ -1626,7 +1673,6 @@ register_diagnostics! {
     E0314, // closure outlives stack frame
     E0315, // cannot invoke closure outside of its lifetime
     E0316, // nested quantification of lifetimes
-    E0453, // overruled by outer forbid
     E0473, // dereference of reference outside its lifetime
     E0474, // captured variable `..` does not outlive the enclosing closure
     E0475, // index of slice outside its lifetime

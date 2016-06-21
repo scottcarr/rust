@@ -148,11 +148,46 @@ impl<'tcx> Mir<'tcx> {
         Ref::map(self.predecessors(), |p| &p[bb])
     }
 
+<<<<<<< HEAD
     #[inline]
     //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
     pub fn dominators(&self) -> Dominators<Self> {
         //self.cache.dominators(self)
         dominators(self)
+=======
+    /// Maps locals (Arg's, Var's, Temp's and ReturnPointer, in that order)
+    /// to their index in the whole list of locals. This is useful if you
+    /// want to treat all locals the same instead of repeating yourself.
+    pub fn local_index(&self, lvalue: &Lvalue<'tcx>) -> Option<Local> {
+        let idx = match *lvalue {
+            Lvalue::Arg(arg) => arg.index(),
+            Lvalue::Var(var) => {
+                self.arg_decls.len() +
+                var.index()
+            }
+            Lvalue::Temp(temp) => {
+                self.arg_decls.len() +
+                self.var_decls.len() +
+                temp.index()
+            }
+            Lvalue::ReturnPointer => {
+                self.arg_decls.len() +
+                self.var_decls.len() +
+                self.temp_decls.len()
+            }
+            Lvalue::Static(_) |
+            Lvalue::Projection(_) => return None
+        };
+        Some(Local::new(idx))
+    }
+
+    /// Counts the number of locals, such that that local_index
+    /// will always return an index smaller than this count.
+    pub fn count_locals(&self) -> usize {
+        self.arg_decls.len() +
+        self.var_decls.len() +
+        self.temp_decls.len() + 1
+>>>>>>> fe96928d7de991e527a7ed7b88bb30aa965c8a08
     }
 }
 
@@ -673,6 +708,7 @@ impl<'tcx> Debug for Statement<'tcx> {
 newtype_index!(Var, "var");
 newtype_index!(Temp, "tmp");
 newtype_index!(Arg, "arg");
+newtype_index!(Local, "local");
 
 /// A path to a value; something that can be evaluated without
 /// changing or disturbing program state.

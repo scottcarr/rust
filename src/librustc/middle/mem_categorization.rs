@@ -517,8 +517,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
           }
 
           hir::ExprPath(..) => {
-            let def = self.tcx().def_map.borrow().get(&expr.id).unwrap().full_def();
-            self.cat_def(expr.id, expr.span, expr_ty, def)
+            self.cat_def(expr.id, expr.span, expr_ty, self.tcx().expect_def(expr.id))
           }
 
           hir::ExprType(ref e, _) => {
@@ -1106,18 +1105,10 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
 
         (*op)(self, cmt.clone(), pat);
 
-        let opt_def = if let Some(path_res) = self.tcx().def_map.borrow().get(&pat.id) {
-            if path_res.depth != 0 || path_res.base_def == Def::Err {
-                // Since patterns can be associated constants
-                // which are resolved during typeck, we might have
-                // some unresolved patterns reaching this stage
-                // without aborting
-                return Err(());
-            }
-            Some(path_res.full_def())
-        } else {
-            None
-        };
+        let opt_def = self.tcx().expect_def_or_none(pat.id);
+        if opt_def == Some(Def::Err) {
+            return Err(());
+        }
 
         // Note: This goes up here (rather than within the PatKind::TupleStruct arm
         // alone) because struct patterns can refer to struct types or
@@ -1154,8 +1145,8 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
                     }
                 }
                 Some(Def::Struct(..)) => {
-                    let expected_len = match self.pat_ty(&pat) {
-                        Ok(&ty::TyS{sty: ty::TyStruct(adt_def, _), ..}) => {
+                    let expected_len = match self.pat_ty(&pat)?.sty {
+                        ty::TyStruct(adt_def, _) => {
                             adt_def.struct_variant().fields.len()
                         }
                         ref ty => {
@@ -1205,8 +1196,8 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
 
           PatKind::Tuple(ref subpats, ddpos) => {
             // (p1, ..., pN)
-            let expected_len = match self.pat_ty(&pat) {
-                Ok(&ty::TyS{sty: ty::TyTuple(ref tys), ..}) => tys.len(),
+            let expected_len = match self.pat_ty(&pat)?.sty {
+                ty::TyTuple(ref tys) => tys.len(),
                 ref ty => span_bug!(pat.span, "tuple pattern unexpected type {:?}", ty),
             };
             for (i, subpat) in subpats.iter().enumerate_and_adjust(expected_len, ddpos) {

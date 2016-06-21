@@ -11,7 +11,6 @@
 use clone::Clone;
 use cmp::{Ord, PartialOrd, PartialEq, Ordering};
 use default::Default;
-use marker;
 use num::{Zero, One};
 use ops::{Add, FnMut, Mul};
 use option::Option::{self, Some, None};
@@ -23,6 +22,7 @@ use super::{Chain, Cycle, Cloned, Enumerate, Filter, FilterMap, FlatMap, Fuse,
 use super::ChainState;
 use super::{DoubleEndedIterator, ExactSizeIterator, Extend, FromIterator,
             IntoIterator};
+use super::ZipImpl;
 
 fn _assert_is_object_safe(_: &Iterator<Item=()>) {}
 
@@ -383,7 +383,7 @@ pub trait Iterator {
     fn zip<U>(self, other: U) -> Zip<Self, U::IntoIter> where
         Self: Sized, U: IntoIterator
     {
-        Zip{a: self, b: other.into_iter()}
+        Zip::new(self, other.into_iter())
     }
 
     /// Takes a closure and creates an iterator which calls that closure on each
@@ -1747,22 +1747,8 @@ pub trait Iterator {
         FromB: Default + Extend<B>,
         Self: Sized + Iterator<Item=(A, B)>,
     {
-        struct SizeHint<A>(usize, Option<usize>, marker::PhantomData<A>);
-        impl<A> Iterator for SizeHint<A> {
-            type Item = A;
-
-            fn next(&mut self) -> Option<A> { None }
-            fn size_hint(&self) -> (usize, Option<usize>) {
-                (self.0, self.1)
-            }
-        }
-
-        let (lo, hi) = self.size_hint();
         let mut ts: FromA = Default::default();
         let mut us: FromB = Default::default();
-
-        ts.extend(SizeHint(lo, hi, marker::PhantomData));
-        us.extend(SizeHint(lo, hi, marker::PhantomData));
 
         for (t, u) in self {
             ts.extend(Some(t));

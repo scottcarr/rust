@@ -8,12 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(rustc_private)]
-macro_rules! m {
-    () => { #[macro_use] extern crate syntax; }
+// Make sure several unnamed function arguments don't conflict with each other
+
+trait Tr {
+    fn f(u8, u8) {}
 }
-m!();
 
 fn main() {
-    help!(); //~ ERROR unexpected end of macro invocation
 }

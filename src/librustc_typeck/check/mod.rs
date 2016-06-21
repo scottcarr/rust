@@ -81,14 +81,13 @@ pub use self::compare_method::{compare_impl_method, compare_const_impl};
 use self::TupleArgumentsFlag::*;
 
 use astconv::{AstConv, ast_region_to_region, PathParamMode};
-use check::_match::PatCtxt;
 use dep_graph::DepNode;
 use fmt_macros::{Parser, Piece, Position};
 use middle::cstore::LOCAL_CRATE;
 use hir::def::{self, Def};
 use hir::def_id::DefId;
+use hir::pat_util;
 use rustc::infer::{self, InferCtxt, InferOk, TypeOrigin, TypeTrace, type_variable};
-use hir::pat_util::{self, pat_id_map};
 use rustc::ty::subst::{self, Subst, Substs, VecPerParamSpace, ParamSpace};
 use rustc::traits::{self, ProjectionMode};
 use rustc::ty::{GenericPredicates, TypeScheme};
@@ -102,7 +101,7 @@ use rustc::ty::util::{Representability, IntTypeExt};
 use require_c_abi_if_variadic;
 use rscope::{ElisionFailureInfo, RegionScope};
 use session::{Session, CompileResult};
-use {CrateCtxt, lookup_full_def};
+use CrateCtxt;
 use TypeAndSubsts;
 use lint;
 use util::common::{block_query, ErrorReported, indenter, loop_query};
@@ -672,11 +671,7 @@ fn check_fn<'a, 'gcx, 'tcx>(inherited: &'a Inherited<'a, 'gcx, 'tcx>,
             });
 
             // Check the pattern.
-            let pcx = PatCtxt {
-                fcx: &fcx,
-                map: pat_id_map(&input.pat),
-            };
-            pcx.check_pat(&input.pat, *arg_ty);
+            fcx.check_pat(&input.pat, *arg_ty);
         }
 
         visit.visit_block(body);
@@ -2407,29 +2402,45 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
         let mut expected_arg_tys = expected_arg_tys;
         let expected_arg_count = fn_inputs.len();
+
+        fn parameter_count_error<'tcx>(sess: &Session, sp: Span, fn_inputs: &[Ty<'tcx>],
+                                       expected_count: usize, arg_count: usize, error_code: &str,
+                                       variadic: bool) {
+            let mut err = sess.struct_span_err_with_code(sp,
+                &format!("this function takes {}{} parameter{} but {} parameter{} supplied",
+                    if variadic {"at least "} else {""},
+                    expected_count,
+                    if expected_count == 1 {""} else {"s"},
+                    arg_count,
+                    if arg_count == 1 {" was"} else {"s were"}),
+                error_code);
+            let input_types = fn_inputs.iter().map(|i| format!("{:?}", i)).collect::<Vec<String>>();
+            if input_types.len() > 0 {
+                err.note(&format!("the following parameter type{} expected: {}",
+                        if expected_count == 1 {" was"} else {"s were"},
+                        input_types.join(", ")));
+            }
+            err.emit();
+        }
+
         let formal_tys = if tuple_arguments == TupleArguments {
             let tuple_type = self.structurally_resolved_type(sp, fn_inputs[0]);
             match tuple_type.sty {
+                ty::TyTuple(arg_types) if arg_types.len() != args.len() => {
+                    parameter_count_error(tcx.sess, sp, fn_inputs, arg_types.len(), args.len(),
+                                          "E0057", false);
+                    expected_arg_tys = &[];
+                    self.err_args(args.len())
+                }
                 ty::TyTuple(arg_types) => {
-                    if arg_types.len() != args.len() {
-                        span_err!(tcx.sess, sp, E0057,
-                            "this function takes {} parameter{} but {} parameter{} supplied",
-                            arg_types.len(),
-                            if arg_types.len() == 1 {""} else {"s"},
-                            args.len(),
-                            if args.len() == 1 {" was"} else {"s were"});
-                        expected_arg_tys = &[];
-                        self.err_args(args.len())
-                    } else {
-                        expected_arg_tys = match expected_arg_tys.get(0) {
-                            Some(&ty) => match ty.sty {
-                                ty::TyTuple(ref tys) => &tys,
-                                _ => &[]
-                            },
-                            None => &[]
-                        };
-                        arg_types.to_vec()
-                    }
+                    expected_arg_tys = match expected_arg_tys.get(0) {
+                        Some(&ty) => match ty.sty {
+                            ty::TyTuple(ref tys) => &tys,
+                            _ => &[]
+                        },
+                        None => &[]
+                    };
+                    arg_types.to_vec()
                 }
                 _ => {
                     span_err!(tcx.sess, sp, E0059,
@@ -2445,23 +2456,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             if supplied_arg_count >= expected_arg_count {
                 fn_inputs.to_vec()
             } else {
-                span_err!(tcx.sess, sp, E0060,
-                    "this function takes at least {} parameter{} \
-                     but {} parameter{} supplied",
-                    expected_arg_count,
-                    if expected_arg_count == 1 {""} else {"s"},
-                    supplied_arg_count,
-                    if supplied_arg_count == 1 {" was"} else {"s were"});
+                parameter_count_error(tcx.sess, sp, fn_inputs, expected_arg_count,
+                                      supplied_arg_count, "E0060", true);
                 expected_arg_tys = &[];
                 self.err_args(supplied_arg_count)
             }
         } else {
-            span_err!(tcx.sess, sp, E0061,
-                "this function takes {} parameter{} but {} parameter{} supplied",
-                expected_arg_count,
-                if expected_arg_count == 1 {""} else {"s"},
-                supplied_arg_count,
-                if supplied_arg_count == 1 {" was"} else {"s were"});
+            parameter_count_error(tcx.sess, sp, fn_inputs, expected_arg_count, supplied_arg_count,
+                                  "E0061", false);
             expected_arg_tys = &[];
             self.err_args(supplied_arg_count)
         };
@@ -3158,7 +3160,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let tcx = self.tcx;
 
         // Find the relevant variant
-        let def = lookup_full_def(tcx, path.span, expr.id);
+        let def = tcx.expect_def(expr.id);
         if def == Def::Err {
             self.set_tainted_by_errors();
             self.check_struct_fields_on_error(expr.id, fields, base_expr);
@@ -3350,18 +3352,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                   self.to_ty(&qself.ty)
               });
 
-              let path_res = if let Some(&d) = tcx.def_map.borrow().get(&id) {
-                  d
-              } else if let Some(hir::QSelf { position: 0, .. }) = *maybe_qself {
-                    // Create some fake resolution that can't possibly be a type.
-                    def::PathResolution {
-                        base_def: Def::Mod(tcx.map.local_def_id(ast::CRATE_NODE_ID)),
-                        depth: path.segments.len()
-                    }
-                } else {
-                  span_bug!(expr.span, "unbound path {:?}", expr)
-              };
-
+              let path_res = tcx.expect_resolution(id);
               if let Some((opt_ty, segments, def)) =
                       self.resolve_ty_and_def_ufcs(path_res, opt_self_ty, path,
                                                    expr.span, expr.id) {
@@ -3752,10 +3743,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
             if let Some(def) = def {
                 // Write back the new resolution.
-                self.tcx().def_map.borrow_mut().insert(node_id, def::PathResolution {
-                    base_def: def,
-                    depth: 0,
-                });
+                self.tcx().def_map.borrow_mut().insert(node_id, def::PathResolution::new(def));
                 Some((Some(ty), slice::ref_slice(item_segment), def))
             } else {
                 self.write_error(node_id);
@@ -3800,11 +3788,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             }
         }
 
-        let pcx = PatCtxt {
-            fcx: self,
-            map: pat_id_map(&local.pat),
-        };
-        pcx.check_pat(&local.pat, t);
+        self.check_pat(&local.pat, t);
         let pat_ty = self.node_ty(local.pat.id);
         if pat_ty.references_error() {
             self.write_ty(local.id, pat_ty);
@@ -4562,7 +4546,7 @@ pub fn may_break(tcx: TyCtxt, id: ast::NodeId, b: &hir::Block) -> bool {
     // <id> nested anywhere inside the loop?
     (block_query(b, |e| {
         if let hir::ExprBreak(Some(_)) = e.node {
-            lookup_full_def(tcx, e.span, e.id) == Def::Label(id)
+            tcx.expect_def(e.id) == Def::Label(id)
         } else {
             false
         }

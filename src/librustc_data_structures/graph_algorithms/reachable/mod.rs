@@ -34,26 +34,22 @@ pub fn reachable_given_rpo<G: Graph>(graph: &G,
         changed = false;
         for &node in reverse_post_order.iter().rev() {
             // every node can reach itself
-            //changed |= reachability.bits.insert(node, node.as_usize());
             changed |= reachability.bits[node].insert(node.index());
 
             // and every pred can reach everything node can reach
             for pred in graph.predecessors(node) {
-                //changed |= reachability.bits.insert_bits_from(node, pred);
-                changed |= reachability.bits[node].insert(pred.index());
+                let nodes_bits = reachability.bits[node].clone();
+                changed |= reachability.bits[pred].insert_all(&nodes_bits);
             }
         }
     }
     reachability
 }
 
-//pub struct Reachability<G: Graph> {
 pub struct Reachability<G: Graph> {
-    //bits: BitSet<G>,
     bits: IndexVec<G::Node, BitVector>,
 }
 
-//impl<G: Graph> Reachability {
 impl<G: Graph> Reachability<G> {
     fn new(graph: &G) -> Self {
         let num_nodes = graph.num_nodes();

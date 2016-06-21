@@ -14,7 +14,8 @@ use rustc::mir::transform::{MirPass, MirSource, Pass};
 // use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc::mir::visit::{Visitor, LvalueContext};
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+//use std::collections::hash_map::Entry;
+use rustc_data_structures::tuple_slice::TupleSlice;
 
 pub struct MoveUpPropagation;
 
@@ -23,23 +24,18 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     _tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     _src: MirSource,
                     mir: &mut Mir<'tcx>) {
-        let tuc = TempDefUseFinder::new(mir);
-        for (k, v) in tuc.uses.iter() {
-            debug!("{:?} uses: {:?}", k, v);
+        let tduf = TempDefUseFinder::new(mir);
+        tduf.print(mir);
+        let candidates = tduf.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
+        for (&tmp, _) in candidates {
+            // do something
+            debug!("{:?} has only one use!", tmp);
+            if let Some(v) = tduf.defs.get(&tmp) {
+                debug!("{:?} has {} defs", tmp, v.len());
+            } else {
+                debug!("we didn't have any defs for {:?}?", tmp);
+            }
         }
-        for (k, v) in tuc.defs.iter() {
-            debug!("{:?} defs: {:?}", k, v);
-        }
-        // let candidates = tuc.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
-        // for (&tmp, _) in candidates {
-        //     // do something
-        //     debug!("{:?} has only one use!", tmp);
-        //     if let Some(v) = tuc.defs.get(&tmp) {
-        //         debug!("{:?} has {} defs", tmp, v.len());
-        //     } else {
-        //         debug!("we didn't have any defs for {:?}?", tmp);
-        //     }
-        // }
     }
 }
 
@@ -91,17 +87,37 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
 impl Pass for MoveUpPropagation {}
 
 #[derive(Debug)]
-struct StatementLocation {
+struct UseDefLocation {
     basic_block: BasicBlock,
-    statement_index: usize,
+    inner_location: StatementIndexOrTerminator,
+}
+impl UseDefLocation {
+    fn print(&self, mir: &Mir) {
+        let ref bb = mir[e.basic_block];
+        match e.inner_location {
+            StatementIndexOrTerminator::StatementIndex(idx) => {
+                debug!("{:?}", bb.statements[idx]);
+            },
+            StatementIndexOrTerminator::Terminator => {
+                debug!("{:?}", bb.terminator);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum StatementIndexOrTerminator {
+    StatementIndex(usize),
+    Terminator,
 }
 
 struct TempDefUseFinder {
-    pub defs: HashMap<Temp, Vec<StatementLocation>>,
-    pub uses: HashMap<Temp, Vec<StatementLocation>>,
+    pub defs: HashMap<Temp, Vec<UseDefLocation>>,
+    pub uses: HashMap<Temp, Vec<UseDefLocation>>,
     curr_basic_block: BasicBlock,
     statement_index: usize,
     kind: AccessKind,
+    is_in_terminator: bool,
 }
 
 enum AccessKind {
@@ -117,6 +133,7 @@ impl TempDefUseFinder {
             curr_basic_block: START_BLOCK,
             statement_index: 0,
             kind: AccessKind::Def, // not necessarily right but it'll get updated when we see an assign
+            is_in_terminator: false,
         };
         tuc.visit_mir(mir);
         tuc
@@ -129,21 +146,29 @@ impl TempDefUseFinder {
         };
         match lvalue {
             &Lvalue::Temp(tmp_id) => {
-                hashmap.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
+                let loc = if self.is_in_terminator {
+                    StatementIndexOrTerminator::Terminator
+                } else {
+                    StatementIndexOrTerminator::StatementIndex(self.statement_index)
+                };
+                hashmap.entry(tmp_id).or_insert(vec![]).push(UseDefLocation {
                     basic_block: self.curr_basic_block,
-                    statement_index: self.statement_index,
+                    inner_location: loc,
                 });
             }
-            // &Lvalue::Projection(ref x) => {
-            //     let ref base = x.as_ref().base;
-            //     if let &Lvalue::Temp(tmp_id) = base {
-            //         hashmap.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
-            //             basic_block: self.curr_basic_block,
-            //             statement_index: self.statement_index,
-            //         });
-            //     }
-            // }
             _ => {}
+        }
+    }
+    fn print(&self, mir: &Mir) {
+        for (k, v) in self.uses.iter() {
+            assert!(v.len() > 0); // every temp should have at least one use
+            debug!("{:?} uses:", k);
+            for e in v { e.print(mir); }
+        }
+        for (k, v) in self.defs.iter() {
+            assert!(v.len() > 0); // every temp should have at least one def
+            debug!("{:?} defs:", k);
+            for e in v { e.print(mir); }
         }
     }
 }
@@ -151,11 +176,10 @@ impl<'a> Visitor<'a> for TempDefUseFinder {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'a>) {
         self.curr_basic_block = block;
         self.statement_index = 0;
+        self.is_in_terminator = false;
         self.super_basic_block_data(block, data);
     }
-    fn visit_statement(&mut self, block: BasicBlock, statement: &Statement<'a>) {
-        //self.super_statement(block, statement);
-        //debug!("{:?}", statement);
+    fn visit_statement(&mut self, _: BasicBlock, statement: &Statement<'a>) {
         match statement.kind {
             StatementKind::Assign(ref lvalue, ref rvalue) => {
                 self.kind = AccessKind::Def;
@@ -167,51 +191,105 @@ impl<'a> Visitor<'a> for TempDefUseFinder {
         self.statement_index += 1;
     }
     fn visit_lvalue(&mut self, lvalue: &Lvalue<'a>, context: LvalueContext) {
-        // match context {
-        //     LvalueContext::Store => {
-        //         // match lvalue {
-        //         //     &Lvalue::Temp(tmp_id) => {
-        //         //         self.defs.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
-        //         //             basic_block: self.curr_basic_block,
-        //         //             statement_index: self.statement_index,
-        //         //         });
-        //         //     }
-        //         //     &Lvalue::Projection(ref x) => {
-        //         //         // do something?
-        //         //         let ref base = x.as_ref().base;
-        //         //         if let &Lvalue::Temp(tmp_id) = base {
-        //         //             self.defs.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
-        //         //                 basic_block: self.curr_basic_block,
-        //         //                 statement_index: self.statement_index,
-        //         //             });
-        //         //         }
-        //         //     }
-        //         //     _ => {}
-        //         // }
-        //         self.add_to_map_if_temp(lvalue, AccessKind::Def);
-        //     }
-        //     // LvalueContext::Call => {},
-        //     // LvalueContext::Drop => {},
-        //     // LvalueContext::Inspect => {},
-        //     // LvalueContext::Borrow { region: Region, kind: BorrowKind },
-        //     // LvalueContext::Slice { from_start: usize, from_end: usize },
-        //     // LvalueContext::Projection => {},
-        //     // LvalueContext::Consume => {},
-        //     _ => {
-        //         // if let &Lvalue::Temp(tmp_id) = lvalue {
-        //         //     self.uses.entry(tmp_id).or_insert(vec![]).push(StatementLocation {
-        //         //         basic_block: self.curr_basic_block,
-        //         //         statement_index: self.statement_index,
-        //         //     });
-        //         // }
-        //         self.add_to_map_if_temp(lvalue, AccessKind::Use);
-        //     }
-        // }
         self.add_to_map_if_temp(lvalue);
         self.super_lvalue(lvalue, context);
     }
-}
+    fn visit_terminator(&mut self, block: BasicBlock, terminator: &Terminator<'a>) {
+        self.is_in_terminator = true;
+        self.super_terminator(block, terminator);                
+    }
+    fn visit_terminator_kind(&mut self, block: BasicBlock, kind: &TerminatorKind<'a>) {
+        match *kind {
+            TerminatorKind::Goto { target } => {
+                self.visit_branch(block, target);
+            }
 
-// one potential problem with only looking at
-// statements is what if the temporary I'm eliminating
-// is used in a terminator?
+            TerminatorKind::If { ref cond, ref targets } => {
+                self.kind = AccessKind::Use;
+                self.visit_operand(cond);
+                for &target in targets.as_slice() {
+                    self.visit_branch(block, target);
+                }
+            }
+
+            TerminatorKind::Switch { ref discr,
+                                        adt_def: _,
+                                        ref targets } => {
+                self.kind = AccessKind::Use;
+                self.visit_lvalue(discr, LvalueContext::Inspect);
+                for &target in targets {
+                    self.visit_branch(block, target);
+                }
+            }
+
+            TerminatorKind::SwitchInt { ref discr,
+                                        ref switch_ty,
+                                        ref values,
+                                        ref targets } => {
+                self.kind = AccessKind::Use;
+                self.visit_lvalue(discr, LvalueContext::Inspect);
+                self.visit_ty(switch_ty);
+                for value in values {
+                    self.visit_const_val(value);
+                }
+                for &target in targets {
+                    self.visit_branch(block, target);
+                }
+            }
+
+            TerminatorKind::Resume |
+            TerminatorKind::Return |
+            TerminatorKind::Unreachable => {
+            }
+
+            TerminatorKind::Drop { ref location,
+                                    target,
+                                    unwind } => {
+                self.kind = AccessKind::Use;
+                self.visit_lvalue(location, LvalueContext::Drop);
+                self.visit_branch(block, target);
+                unwind.map(|t| self.visit_branch(block, t));
+            }
+
+            TerminatorKind::DropAndReplace { ref location,
+                                                ref value,
+                                                target,
+                                                unwind } => {
+                self.kind = AccessKind::Use;
+                self.visit_lvalue(location, LvalueContext::Drop);
+                self.visit_operand(value);
+                self.visit_branch(block, target);
+                unwind.map(|t| self.visit_branch(block, t));
+            }
+
+            TerminatorKind::Call { ref func,
+                                    ref args,
+                                    ref destination,
+                                    cleanup } => {
+                self.visit_operand(func);
+                for arg in args {
+                    self.visit_operand(arg);
+                }
+                if let Some((ref destination, target)) = *destination {
+                    self.kind = AccessKind::Def; // this is the whole reason for this function
+                    self.visit_lvalue(destination, LvalueContext::Call);
+                    self.kind = AccessKind::Use; // this is the whole reason for this function
+                    self.visit_branch(block, target);
+                }
+                cleanup.map(|t| self.visit_branch(block, t));
+            }
+
+            TerminatorKind::Assert { ref cond,
+                                        expected: _,
+                                        ref msg,
+                                        target,
+                                        cleanup } => {
+                self.kind = AccessKind::Use;
+                self.visit_operand(cond);
+                self.visit_assert_message(msg);
+                self.visit_branch(block, target);
+                cleanup.map(|t| self.visit_branch(block, t));
+            }
+        }
+    }
+}

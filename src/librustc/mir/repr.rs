@@ -148,13 +148,13 @@ impl<'tcx> Mir<'tcx> {
         Ref::map(self.predecessors(), |p| &p[bb])
     }
 
-<<<<<<< HEAD
     #[inline]
     //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
     pub fn dominators(&self) -> Dominators<Self> {
         //self.cache.dominators(self)
         dominators(self)
-=======
+    }
+
     /// Maps locals (Arg's, Var's, Temp's and ReturnPointer, in that order)
     /// to their index in the whole list of locals. This is useful if you
     /// want to treat all locals the same instead of repeating yourself.
@@ -187,7 +187,7 @@ impl<'tcx> Mir<'tcx> {
         self.arg_decls.len() +
         self.var_decls.len() +
         self.temp_decls.len() + 1
->>>>>>> fe96928d7de991e527a7ed7b88bb30aa965c8a08
+
     }
 }
 

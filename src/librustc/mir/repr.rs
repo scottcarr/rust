@@ -101,6 +101,7 @@ pub struct Mir<'tcx> {
 
 /// where execution begins
 pub const START_BLOCK: BasicBlock = BasicBlock(0);
+pub const END_BLOCK: BasicBlock = BasicBlock(u32::MAX);
 
 impl<'tcx> Mir<'tcx> {
     pub fn new(basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
@@ -1207,15 +1208,28 @@ impl<'tcx> Graph for Mir<'tcx> {
 
     fn start_node(&self) -> Self::Node { START_BLOCK }
 
+    fn end_node(&self) -> Self::Node { END_BLOCK }
+
     fn predecessors<'graph>(&'graph self, node: Self::Node)
                             -> <Self as GraphPredecessors<'graph>>::Iter
     {
-        self.predecessors_for(node).clone().into_iter()
+        if node == END_BLOCK {
+            (0..self.num_nodes()).filter(|basic_block| {
+                self.basic_blocks()[basic_block].successors().len() == 0; 
+            })
+        } else {
+            self.predecessors_for(node).clone().into_iter()
+        }
     }
     fn successors<'graph>(&'graph self, node: Self::Node)
                           -> <Self as GraphSuccessors<'graph>>::Iter
     {
-        self.basic_blocks[node].terminator().successors().into_owned().into_iter()
+        let succs = self.basic_blocks[node].terminator().successors()
+        if succs.len() == 0 and node != END_BLOCK {
+            vec![END_BLOCK].into_iter()
+        } else {
+            succs().into_owned().into_iter()
+        } 
     }
 }
 

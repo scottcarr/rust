@@ -16,6 +16,7 @@ use rustc::mir::visit::{Visitor, LvalueContext};
 use std::collections::HashMap;
 //use std::collections::hash_map::Entry;
 use rustc_data_structures::tuple_slice::TupleSlice;
+use rustc_data_structures::graph_algorithms::dominators::Dominators;
 
 pub struct MoveUpPropagation;
 
@@ -27,18 +28,26 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let node_id = src.item_id();
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);
+        let dominators = mir.dominators();
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
         let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
         for (tmp, lists) in candidates {
             debug!("{:?} is a candidate", tmp);
             // check if
-            // -- Def: L = foo
-            // post dominates
             // -- Use: bar = ... L ...
+            // post dominates
+            // -- Def: L = foo            
             // if so,
             // replace Def wit
             // -- Repl: bar = ... foo ...
+
+            let Def = lists[tmp].def.first();
+            let Use = list[tmp].uses.first()
+
+            if 
+
+
 
             // I wonder if there should be a NOP to preserve indexes ...
             
@@ -69,24 +78,40 @@ impl Pass for MoveUpPropagation {}
 #[derive(Debug)]
 struct UseDefLocation {
     basic_block: BasicBlock,
-    inner_location: StatementIndexOrTerminator,
+    inner_location: InnerLocation,
 }
 impl UseDefLocation {
     fn print(&self, mir: &Mir) {
         let ref bb = mir[self.basic_block];
         match self.inner_location {
-            StatementIndexOrTerminator::StatementIndex(idx) => {
+            InnerLocation::StatementIndex(idx) => {
                 debug!("{:?}", bb.statements[idx]);
             },
-            StatementIndexOrTerminator::Terminator => {
+            InnerLocation::Terminator => {
                 debug!("{:?}", bb.terminator);
             }
+        }
+    }
+    fn is_dominated_by(&self, other: &Self, dominators: &Dominators<Mir>) -> bool {
+        if self.basic_block == other.basic_block {
+            match (self.inner_location, other.inner_location) {
+                // Assumptions: Terminator dominates all statements
+                // Terminator does not dominate itself
+                (InnerLocation::StatementIndex(_), InnerLocation::Terminator) => { false }
+                (InnerLocation::Terminator, InnerLocation::Terminator) => { false },
+                (InnerLocation::Terminator, InnerLocation::StatementIndex(_)) => { true }
+                (InnerLocation::StatementIndex(self_idx), InnerLocation::StatementIndex(other_idx)) => {
+                    self_idx > other_idex
+                }       
+            }
+        } else { // self.basic_block != other.basic_block
+            dominators.is_dominated_by(self.basic_block, other.basic_block)
         }
     }
 }
 
 #[derive(Debug)]
-enum StatementIndexOrTerminator {
+enum InnerLocation {
     StatementIndex(usize),
     Terminator,
 }
@@ -135,9 +160,9 @@ impl TempDefUseFinder {
         match lvalue {
             &Lvalue::Temp(tmp_id) => {
                 let loc = if self.is_in_terminator {
-                    StatementIndexOrTerminator::Terminator
+                    InnerLocation::Terminator
                 } else {
-                    StatementIndexOrTerminator::StatementIndex(self.statement_index)
+                    InnerLocation::StatementIndex(self.statement_index)
                 };
                 let ent = UseDefLocation {
                     basic_block: self.curr_basic_block,

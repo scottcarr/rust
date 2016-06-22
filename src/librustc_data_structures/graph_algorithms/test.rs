@@ -75,6 +75,3 @@ impl<'graph> GraphSuccessors<'graph> for TestGraph {
     type Item = usize;
     type Iter = iter::Cloned<slice::Iter<'graph, usize>>;
 }
-
-// impl NodeIndex for usize {
-// }

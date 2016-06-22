@@ -23,11 +23,6 @@ fn diamond() {
 
     let dominators = dominators(&graph);
 
-    // assert_eq!(&dominators.all_immediate_dominators().vec[..],
-    //            &[Some(0),
-    //              Some(0),
-    //              Some(0),
-    //              Some(0)]);
     let immediate_dominators = dominators.all_immediate_dominators();
     assert_eq!(immediate_dominators[0], Some(0));
     assert_eq!(immediate_dominators[1], Some(0));
@@ -51,16 +46,7 @@ fn paper() {
     ]);
 
     let dominators = dominators(&graph);
-<<<<<<< HEAD
-    assert_eq!(&dominators.all_immediate_dominators().vec[..],
-               &[None, // <-- note that 0 is not in graph
-                 Some(6), Some(6), Some(6),
-                 Some(6), Some(6), Some(6)]);
-=======
-    // assert_eq!(&dominators.all_immediate_dominators().vec[..],
-    //            &[None, // <-- note that 0 is not in graph
-    //              Some(6), Some(6), Some(6),
-    //              Some(6), Some(6), Some(6)]);
+
     let immediate_dominators = dominators.all_immediate_dominators();
     assert_eq!(immediate_dominators[0], None); // <-- note that 0 is not in graph
     assert_eq!(immediate_dominators[1], Some(6));
@@ -69,6 +55,5 @@ fn paper() {
     assert_eq!(immediate_dominators[4], Some(6));
     assert_eq!(immediate_dominators[5], Some(6));
     assert_eq!(immediate_dominators[6], Some(6));
->>>>>>> origin/dominator-cache
 }
 

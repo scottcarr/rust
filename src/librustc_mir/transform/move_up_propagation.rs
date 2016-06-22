@@ -16,7 +16,9 @@ use rustc::mir::visit::{Visitor, LvalueContext};
 use std::collections::HashMap;
 //use std::collections::hash_map::Entry;
 use rustc_data_structures::tuple_slice::TupleSlice;
-use rustc_data_structures::graph_algorithms::dominators::Dominators;
+use rustc_data_structures::graph_algorithms::Graph;
+use rustc_data_structures::graph_algorithms::dominators::{dominators, Dominators};
+use rustc_data_structures::graph_algorithms::transpose::TransposedGraph;
 
 pub struct MoveUpPropagation;
 
@@ -28,24 +30,27 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let node_id = src.item_id();
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);
-        let dominators = mir.dominators();
+        let mir_clone = mir.clone();
+        let transposed_mir = TransposedGraph::new(mir_clone);
+        let dominators = dominators(&transposed_mir);
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
         let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
         for (tmp, lists) in candidates {
             debug!("{:?} is a candidate", tmp);
             // check if
-            // -- Use: bar = ... L ...
-            // post dominates
-            // -- Def: L = foo            
+            // -- Def: L = foo 
+            // is post dominated by
+            // -- Use: bar = ... L ...           
             // if so,
             // replace Def wit
             // -- Repl: bar = ... foo ...
 
-            let Def = lists[tmp].def.first();
-            let Use = list[tmp].uses.first()
-
-            if 
+            let ldef = lists.defs.first();
+            let luse = lists.uses.first();
+            if ldef.is_post_dominated_by(luse) {
+                // do something
+            }
 
 
 
@@ -92,20 +97,20 @@ impl UseDefLocation {
             }
         }
     }
-    fn is_dominated_by(&self, other: &Self, dominators: &Dominators<Mir>) -> bool {
+    fn is_post_dominated_by(&self, other: &Self, post_dominators: &Dominators<Mir>) -> bool {
         if self.basic_block == other.basic_block {
-            match (self.inner_location, other.inner_location) {
-                // Assumptions: Terminator dominates all statements
-                // Terminator does not dominate itself
-                (InnerLocation::StatementIndex(_), InnerLocation::Terminator) => { false }
-                (InnerLocation::Terminator, InnerLocation::Terminator) => { false },
-                (InnerLocation::Terminator, InnerLocation::StatementIndex(_)) => { true }
-                (InnerLocation::StatementIndex(self_idx), InnerLocation::StatementIndex(other_idx)) => {
-                    self_idx > other_idex
+            match (&self.inner_location, &other.inner_location) {
+                // Assumptions: Terminator post dominates all statements
+                // Terminator does not post dominate itself
+                (&InnerLocation::StatementIndex(_), &InnerLocation::Terminator) => { true }
+                (&InnerLocation::Terminator, &InnerLocation::Terminator) => { false },
+                (&InnerLocation::Terminator, &InnerLocation::StatementIndex(_)) => { false }
+                (&InnerLocation::StatementIndex(self_idx), &InnerLocation::StatementIndex(other_idx)) => {
+                    self_idx < other_idx
                 }       
             }
         } else { // self.basic_block != other.basic_block
-            dominators.is_dominated_by(self.basic_block, other.basic_block)
+            post_dominators.is_dominated_by(self.basic_block, other.basic_block)
         }
     }
 }

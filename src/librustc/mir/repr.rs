@@ -149,13 +149,6 @@ impl<'tcx> Mir<'tcx> {
     }
 
     #[inline]
-<<<<<<< HEAD
-    //pub fn dominators(&'tcx self) -> Ref<Dominators<Self>> {
-    pub fn dominators(&self) -> Dominators<Self> {
-        //self.cache.dominators(self)
-        dominators(self)
-    }
-=======
     pub fn dominators(&self) -> Dominators<Self> {
         dominators(self)
     }
@@ -193,7 +186,6 @@ impl<'tcx> Mir<'tcx> {
         self.var_decls.len() +
         self.temp_decls.len() + 1
     }
->>>>>>> origin/dominator-cache
 }
 
 impl<'tcx> Index<BasicBlock> for Mir<'tcx> {

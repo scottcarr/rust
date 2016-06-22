@@ -14,10 +14,10 @@ use super::*;
 
 #[test]
 fn test1() {
-    // 0 -> 1 -> 2 -> 3
-    //      ^    v
-    //      6 <- 4 -> 5
-    let graph = TestGraph::new(0, &[
+    // 0 -> 1 -> 2 -> 3 - v
+    //      ^    v        7
+    //      6 <- 4 -> 5 - ^
+    let graph = TestGraph::new(0, 7, &[
         (0, 1),
         (1, 2),
         (2, 3),
@@ -25,6 +25,8 @@ fn test1() {
         (4, 5),
         (4, 6),
         (6, 1),
+        (3, 7),
+        (5, 7),
     ]);
     let reachable = reachable(&graph);
     assert!((0..6).all(|i| reachable.can_reach(0, i)));
@@ -40,10 +42,10 @@ fn test1() {
 /// use bigger indices to cross between words in the bit set
 #[test]
 fn test2() {
-    // 30 -> 31 -> 32 -> 33
-    //       ^      v
-    //       36 <- 34 -> 35
-    let graph = TestGraph::new(30, &[
+    // 30 -> 31 -> 32 -> 33 - v
+    //       ^      v         37
+    //       36 <- 34 -> 35 - ^
+    let graph = TestGraph::new(30, 37, &[
         (30, 31),
         (31, 32),
         (32, 33),
@@ -51,6 +53,8 @@ fn test2() {
         (34, 35),
         (34, 36),
         (36, 31),
+        (33, 37),
+        (35, 37),
     ]);
     let reachable = reachable(&graph);
     assert!((30..36).all(|i| reachable.can_reach(30, i)));

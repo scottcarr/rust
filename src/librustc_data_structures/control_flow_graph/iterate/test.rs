@@ -15,7 +15,7 @@ use super::*;
 
 #[test]
 fn diamond_post_order() {
-    let graph = TestGraph::new(0, &[
+    let graph = TestGraph::new(0, 3, &[
         (0, 1),
         (0, 2),
         (1, 3),
@@ -33,7 +33,7 @@ fn rev_post_order_inner_loop() {
     //      ^     ^    v      |
     //      |     6 <- 4      |
     //      +-----------------+
-    let graph = TestGraph::new(0, &[
+    let graph = TestGraph::new(0, 5, &[
         (0, 1),
         (1, 2),
         (2, 3),

@@ -23,10 +23,11 @@ pub struct TestGraph {
 }
 
 impl TestGraph {
-    pub fn new(start_node: usize, edges: &[(usize, usize)]) -> Self {
+    pub fn new(start_node: usize, end_node: usize, edges: &[(usize, usize)]) -> Self {
         let mut graph = TestGraph {
             num_nodes: start_node + 1,
             start_node: start_node,
+            end_node: end_node,
             successors: HashMap::new(),
             predecessors: HashMap::new()
         };
@@ -49,6 +50,10 @@ impl ControlFlowGraph for TestGraph {
 
     fn start_node(&self) -> usize {
         self.start_node
+    }
+
+    fn end_node(&self) -> usize {
+        self.end_node
     }
 
     fn num_nodes(&self) -> usize {

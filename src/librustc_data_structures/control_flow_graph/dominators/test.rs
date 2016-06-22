@@ -14,7 +14,7 @@ use super::*;
 
 #[test]
 fn diamond() {
-    let graph = TestGraph::new(0, &[
+    let graph = TestGraph::new(0, 3, &[
         (0, 1),
         (0, 2),
         (1, 3),
@@ -32,7 +32,7 @@ fn diamond() {
 #[test]
 fn paper() {
     // example from the paper:
-    let graph = TestGraph::new(6, &[
+    let graph = TestGraph::new(6, 7, &[
         (6, 5),
         (6, 4),
         (5, 1),
@@ -42,6 +42,7 @@ fn paper() {
         (2, 3),
         (3, 2),
         (2, 1),
+        (3, 7),
     ]);
 
     let dominators = dominators(&graph);

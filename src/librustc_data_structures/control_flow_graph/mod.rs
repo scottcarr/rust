@@ -28,6 +28,7 @@ pub trait ControlFlowGraph
 
     fn num_nodes(&self) -> usize;
     fn start_node(&self) -> Self::Node;
+    fn end_node(&self) -> Self::Node;
     fn predecessors<'graph>(&'graph self, node: Self::Node)
                             -> <Self as GraphPredecessors<'graph>>::Iter;
     fn successors<'graph>(&'graph self, node: Self::Node)

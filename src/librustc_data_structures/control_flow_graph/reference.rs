@@ -21,6 +21,10 @@ impl<'graph, G: ControlFlowGraph> ControlFlowGraph for &'graph G {
         (**self).start_node()
     }
 
+    fn end_node(&self) -> Self::Node {
+        (**self).end_node()
+    }
+
     fn predecessors<'iter>(&'iter self, node: Self::Node)
                             -> <Self as GraphPredecessors<'iter>>::Iter {
         (**self).predecessors(node)

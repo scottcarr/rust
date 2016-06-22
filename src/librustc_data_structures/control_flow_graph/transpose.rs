@@ -33,8 +33,12 @@ impl<G: ControlFlowGraph> ControlFlowGraph for TransposedGraph<G> {
         self.base_graph.num_nodes()
     }
 
-    fn start_node(&self) -> Self::Node {
+    fn end_node(&self) -> Self::Node {
         self.start_node
+    }
+
+    fn start_node(&self) -> Self::Node {
+        self.end_node
     }
 
     fn predecessors<'graph>(&'graph self, node: Self::Node)

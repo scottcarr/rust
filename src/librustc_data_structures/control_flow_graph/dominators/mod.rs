@@ -23,13 +23,13 @@ use std::fmt;
 #[cfg(test)]
 mod test;
 
-pub fn dominators<G: ControlFlowGraph>(graph: &G) -> Dominators<G> {
+pub fn dominators<G: ControlFlowGraph>(graph: &G) -> Dominators<G::Node> {
     let start_node = graph.start_node();
     let rpo = reverse_post_order(graph, start_node);
     dominators_given_rpo(graph, &rpo)
 }
 
-pub fn dominators_given_rpo<G: ControlFlowGraph>(graph: &G, rpo: &[G::Node]) -> Dominators<G> {
+pub fn dominators_given_rpo<G: ControlFlowGraph>(graph: &G, rpo: &[G::Node]) -> Dominators<G::Node> {
     let start_node = graph.start_node();
     assert_eq!(rpo[0], start_node);
 
@@ -54,7 +54,7 @@ pub fn dominators_given_rpo<G: ControlFlowGraph>(graph: &G, rpo: &[G::Node]) -> 
                 if immediate_dominators[pred].is_some() {
                     // (*)
                     // (*) dominators for `pred` have been calculated
-                    new_idom = intersect_opt::<G>(&post_order_rank,
+                    new_idom = intersect_opt(&post_order_rank,
                                                   &immediate_dominators,
                                                   new_idom,
                                                   Some(pred));
@@ -74,23 +74,23 @@ pub fn dominators_given_rpo<G: ControlFlowGraph>(graph: &G, rpo: &[G::Node]) -> 
     }
 }
 
-fn intersect_opt<G: ControlFlowGraph>(post_order_rank: &IndexVec<G::Node, usize>,
-                                      immediate_dominators: &IndexVec<G::Node, Option<G::Node>>,
-                                      node1: Option<G::Node>,
-                                      node2: Option<G::Node>)
-                                      -> Option<G::Node> {
+fn intersect_opt<Node: Idx>(post_order_rank: &IndexVec<Node, usize>,
+                                      immediate_dominators: &IndexVec<Node, Option<Node>>,
+                                      node1: Option<Node>,
+                                      node2: Option<Node>)
+                                      -> Option<Node> {
     match (node1, node2) {
         (None, None) => None,
         (Some(n), None) | (None, Some(n)) => Some(n),
-        (Some(n1), Some(n2)) => Some(intersect::<G>(post_order_rank, immediate_dominators, n1, n2)),
+        (Some(n1), Some(n2)) => Some(intersect(post_order_rank, immediate_dominators, n1, n2)),
     }
 }
 
-fn intersect<G: ControlFlowGraph>(post_order_rank: &IndexVec<G::Node, usize>,
-                                  immediate_dominators: &IndexVec<G::Node, Option<G::Node>>,
-                                  mut node1: G::Node,
-                                  mut node2: G::Node)
-                                  -> G::Node {
+fn intersect<Node: Idx>(post_order_rank: &IndexVec<Node, usize>,
+                                  immediate_dominators: &IndexVec<Node, Option<Node>>,
+                                  mut node1: Node,
+                                  mut node2: Node)
+                                  -> Node {
     while node1 != node2 {
         while post_order_rank[node1] < post_order_rank[node2] {
             node1 = immediate_dominators[node1].unwrap();
@@ -104,22 +104,22 @@ fn intersect<G: ControlFlowGraph>(post_order_rank: &IndexVec<G::Node, usize>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Dominators<G: ControlFlowGraph> {
-    post_order_rank: IndexVec<G::Node, usize>,
-    immediate_dominators: IndexVec<G::Node, Option<G::Node>>,
+pub struct Dominators<N: Idx> {
+    post_order_rank: IndexVec<N, usize>,
+    immediate_dominators: IndexVec<N, Option<N>>,
 }
 
-impl<G: ControlFlowGraph> Dominators<G> {
-    pub fn is_reachable(&self, node: G::Node) -> bool {
+impl<Node: Idx> Dominators<Node> {
+    pub fn is_reachable(&self, node: Node) -> bool {
         self.immediate_dominators[node].is_some()
     }
 
-    pub fn immediate_dominator(&self, node: G::Node) -> G::Node {
+    pub fn immediate_dominator(&self, node: Node) -> Node {
         assert!(self.is_reachable(node), "node {:?} is not reachable", node);
         self.immediate_dominators[node].unwrap()
     }
 
-    pub fn dominators(&self, node: G::Node) -> Iter<G> {
+    pub fn dominators(&self, node: Node) -> Iter<Node> {
         assert!(self.is_reachable(node), "node {:?} is not reachable", node);
         Iter {
             dominators: self,
@@ -127,43 +127,43 @@ impl<G: ControlFlowGraph> Dominators<G> {
         }
     }
 
-    pub fn is_dominated_by(&self, node: G::Node, dom: G::Node) -> bool {
+    pub fn is_dominated_by(&self, node: Node, dom: Node) -> bool {
         // FIXME -- could be optimized by using post-order-rank
         self.dominators(node).any(|n| n == dom)
     }
 
-    pub fn mutual_dominator_node(&self, node1: G::Node, node2: G::Node) -> G::Node {
+    pub fn mutual_dominator_node(&self, node1: Node, node2: Node) -> Node {
         assert!(self.is_reachable(node1),
                 "node {:?} is not reachable",
                 node1);
         assert!(self.is_reachable(node2),
                 "node {:?} is not reachable",
                 node2);
-        intersect::<G>(&self.post_order_rank,
-                       &self.immediate_dominators,
-                       node1,
-                       node2)
+        intersect::<Node>(&self.post_order_rank,
+                  &self.immediate_dominators,
+                  node1,
+                  node2)
     }
 
-    pub fn mutual_dominator<I>(&self, iter: I) -> Option<G::Node>
-        where I: IntoIterator<Item = G::Node>
+    pub fn mutual_dominator<I>(&self, iter: I) -> Option<Node>
+        where I: IntoIterator<Item = Node>
     {
         let mut iter = iter.into_iter();
         iter.next()
             .map(|dom| iter.fold(dom, |dom, node| self.mutual_dominator_node(dom, node)))
     }
 
-    pub fn all_immediate_dominators(&self) -> &IndexVec<G::Node, Option<G::Node>> {
+    pub fn all_immediate_dominators(&self) -> &IndexVec<Node, Option<Node>> {
         &self.immediate_dominators
     }
 
-    pub fn dominator_tree(&self) -> DominatorTree<G> {
-        let elem: Vec<G::Node> = Vec::new();
-        let mut children: IndexVec<G::Node, Vec<G::Node>> =
+    pub fn dominator_tree(&self) -> DominatorTree<Node> {
+        let elem: Vec<Node> = Vec::new();
+        let mut children: IndexVec<Node, Vec<Node>> =
             IndexVec::from_elem_n(elem, self.immediate_dominators.len());
         let mut root = None;
         for (index, immed_dom) in self.immediate_dominators.iter().enumerate() {
-            let node = G::Node::new(index);
+            let node = Node::new(index);
             match *immed_dom {
                 None => {
                     // node not reachable
@@ -184,13 +184,13 @@ impl<G: ControlFlowGraph> Dominators<G> {
     }
 }
 
-pub struct Iter<'dom, G: ControlFlowGraph + 'dom> {
-    dominators: &'dom Dominators<G>,
-    node: Option<G::Node>,
+pub struct Iter<'dom, Node: Idx + 'dom> {
+    dominators: &'dom Dominators<Node>,
+    node: Option<Node>,
 }
 
-impl<'dom, G: ControlFlowGraph> Iterator for Iter<'dom, G> {
-    type Item = G::Node;
+impl<'dom, Node: Idx> Iterator for Iter<'dom, Node> {
+    type Item = Node;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(node) = self.node {
@@ -207,21 +207,21 @@ impl<'dom, G: ControlFlowGraph> Iterator for Iter<'dom, G> {
     }
 }
 
-pub struct DominatorTree<G: ControlFlowGraph> {
-    root: G::Node,
-    children: IndexVec<G::Node, Vec<G::Node>>,
+pub struct DominatorTree<N: Idx> {
+    root: N,
+    children: IndexVec<N, Vec<N>>,
 }
 
-impl<G: ControlFlowGraph> DominatorTree<G> {
-    pub fn root(&self) -> G::Node {
+impl<Node: Idx> DominatorTree<Node> {
+    pub fn root(&self) -> Node {
         self.root
     }
 
-    pub fn children(&self, node: G::Node) -> &[G::Node] {
+    pub fn children(&self, node: Node) -> &[Node] {
         &self.children[node]
     }
 
-    pub fn iter_children_of(&self, node: G::Node) -> IterChildrenOf<G> {
+    pub fn iter_children_of(&self, node: Node) -> IterChildrenOf<Node> {
         IterChildrenOf {
             tree: self,
             stack: vec![node],
@@ -229,15 +229,15 @@ impl<G: ControlFlowGraph> DominatorTree<G> {
     }
 }
 
-pub struct IterChildrenOf<'iter, G: ControlFlowGraph + 'iter> {
-    tree: &'iter DominatorTree<G>,
-    stack: Vec<G::Node>,
+pub struct IterChildrenOf<'iter, Node: Idx + 'iter> {
+    tree: &'iter DominatorTree<Node>,
+    stack: Vec<Node>,
 }
 
-impl<'iter, G: ControlFlowGraph> Iterator for IterChildrenOf<'iter, G> {
-    type Item = G::Node;
+impl<'iter, Node: Idx> Iterator for IterChildrenOf<'iter, Node> {
+    type Item = Node;
 
-    fn next(&mut self) -> Option<G::Node> {
+    fn next(&mut self) -> Option<Node> {
         if let Some(node) = self.stack.pop() {
             self.stack.extend(self.tree.children(node));
             Some(node)
@@ -247,7 +247,7 @@ impl<'iter, G: ControlFlowGraph> Iterator for IterChildrenOf<'iter, G> {
     }
 }
 
-impl<G: ControlFlowGraph> fmt::Debug for DominatorTree<G> {
+impl<Node: Idx> fmt::Debug for DominatorTree<Node> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt::Debug::fmt(&DominatorTreeNode {
                             tree: self,
@@ -257,12 +257,12 @@ impl<G: ControlFlowGraph> fmt::Debug for DominatorTree<G> {
     }
 }
 
-struct DominatorTreeNode<'tree, G: ControlFlowGraph + 'tree> {
-    tree: &'tree DominatorTree<G>,
-    node: G::Node,
+struct DominatorTreeNode<'tree, Node: Idx> {
+    tree: &'tree DominatorTree<Node>,
+    node: Node,
 }
 
-impl<'tree, G: ControlFlowGraph> fmt::Debug for DominatorTreeNode<'tree, G> {
+impl<'tree, Node: Idx> fmt::Debug for DominatorTreeNode<'tree, Node> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let subtrees: Vec<_> = self.tree
             .children(self.node)

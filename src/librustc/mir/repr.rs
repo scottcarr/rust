@@ -150,7 +150,7 @@ impl<'tcx> Mir<'tcx> {
     }
 
     #[inline]
-    pub fn dominators(&self) -> Dominators<Self> {
+    pub fn dominators(&self) -> Dominators<BasicBlock> {
         dominators(self)
     }
 

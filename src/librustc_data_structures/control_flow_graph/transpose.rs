@@ -13,16 +13,22 @@ use super::*;
 pub struct TransposedGraph<G: ControlFlowGraph> {
     base_graph: G,
     start_node: G::Node,
+    end_node: G::Node,
 }
 
 impl<G: ControlFlowGraph> TransposedGraph<G> {
     pub fn new(base_graph: G) -> Self {
         let start_node = base_graph.start_node();
-        Self::with_start(base_graph, start_node)
+        let end_node = base_graph.end_node();
+        Self::with_start_and_end(base_graph, start_node, end_node)
     }
 
-    pub fn with_start(base_graph: G, start_node: G::Node) -> Self {
-        TransposedGraph { base_graph: base_graph, start_node: start_node }
+    pub fn with_start_and_end(base_graph: G, start_node: G::Node, end_node: G::Node) -> Self {
+        TransposedGraph { 
+            base_graph: base_graph, 
+            start_node: start_node,
+            end_node: end_node,
+        }
     }
 }
 

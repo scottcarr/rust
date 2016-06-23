@@ -18,6 +18,7 @@ use super::{ControlFlowGraph, GraphPredecessors, GraphSuccessors};
 pub struct TestGraph {
     num_nodes: usize,
     start_node: usize,
+    end_node: usize,
     successors: HashMap<usize, Vec<usize>>,
     predecessors: HashMap<usize, Vec<usize>>,
 }

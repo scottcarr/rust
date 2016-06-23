@@ -102,6 +102,7 @@ pub struct Mir<'tcx> {
 
 /// where execution begins
 pub const START_BLOCK: BasicBlock = BasicBlock(0);
+const END_BLOCK: BasicBlock = BasicBlock(u32::MAX);
 
 impl<'tcx> Mir<'tcx> {
     pub fn new(basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
@@ -1208,15 +1209,31 @@ impl<'tcx> ControlFlowGraph for Mir<'tcx> {
 
     fn start_node(&self) -> Self::Node { START_BLOCK }
 
+    fn end_node(&self) -> Self::Node { END_BLOCK }
+
     fn predecessors<'graph>(&'graph self, node: Self::Node)
                             -> <Self as GraphPredecessors<'graph>>::Iter
     {
-        self.predecessors_for(node).clone().into_iter()
+        if node == END_BLOCK {
+            let ps: Vec<_> = (0..self.basic_blocks().len()).map(|i| BasicBlock(i as u32))
+            .filter(|&i| {
+                self.basic_blocks[i].terminator().successors().len() == 0
+            }).collect();
+            ps.into_iter()
+        } else {
+            self.predecessors_for(node).clone().into_iter()
+        }
+        
     }
     fn successors<'graph>(&'graph self, node: Self::Node)
                           -> <Self as GraphSuccessors<'graph>>::Iter
     {
-        self.basic_blocks[node].terminator().successors().into_owned().into_iter()
+        let succ = self.basic_blocks[node].terminator().successors();
+        if succ.len() == 0 {
+            vec![END_BLOCK].into_iter()
+        } else {
+            succ.into_owned().into_iter()
+        }
     }
 }
 

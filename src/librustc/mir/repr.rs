@@ -187,6 +187,13 @@ impl<'tcx> Mir<'tcx> {
         self.var_decls.len() +
         self.temp_decls.len() + 1
     }
+
+    /// An implict final block of the CFG
+    /// This block is the successor to all blocks
+    /// That exit this function (that have no successors)
+    pub fn end_block(&self) -> BasicBlock {
+        BasicBlock(self.basic_blocks().len() as u32)
+    }
 }
 
 impl<'tcx> Index<BasicBlock> for Mir<'tcx> {
@@ -1204,19 +1211,36 @@ impl<'tcx> ControlFlowGraph for Mir<'tcx> {
 
     type Node = BasicBlock;
 
-    fn num_nodes(&self) -> usize { self.basic_blocks.len() }
+    fn num_nodes(&self) -> usize { self.basic_blocks.len() + 1 }
 
     fn start_node(&self) -> Self::Node { START_BLOCK }
 
     fn predecessors<'graph>(&'graph self, node: Self::Node)
                             -> <Self as GraphPredecessors<'graph>>::Iter
     {
-        self.predecessors_for(node).clone().into_iter()
+        if node == self.end_block() {
+            let end_preds: Vec<_> = (0..self.basic_blocks.len()).map(|idx| BasicBlock(idx as u32))
+            .filter(|&bb| {
+                self.basic_blocks[bb].terminator().successors().len() == 0
+            }).collect();
+            end_preds.into_iter()
+        } else {
+            self.predecessors_for(node).clone().into_iter()
+        }
     }
     fn successors<'graph>(&'graph self, node: Self::Node)
                           -> <Self as GraphSuccessors<'graph>>::Iter
     {
-        self.basic_blocks[node].terminator().successors().into_owned().into_iter()
+        if node == self.end_block() {
+            vec![].into_iter()
+        } else {
+            let succs = self.basic_blocks[node].terminator().successors().into_owned().into_iter();
+            if succs.len() == 0 {
+                vec![self.end_block()].into_iter()
+            } else {
+                succs
+            }
+        }
     }
 }
 

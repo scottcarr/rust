@@ -16,9 +16,10 @@ use rustc::mir::visit::{Visitor, LvalueContext};
 use std::collections::HashMap;
 //use std::collections::hash_map::Entry;
 use rustc_data_structures::tuple_slice::TupleSlice;
-use rustc_data_structures::graph_algorithms::Graph;
-use rustc_data_structures::graph_algorithms::dominators::{dominators, Dominators};
-use rustc_data_structures::graph_algorithms::transpose::TransposedGraph;
+//use rustc_data_structures::control_flow_graph::ControlFlowGraph;
+use rustc_data_structures::control_flow_graph::dominators::{dominators, Dominators};
+use rustc_data_structures::control_flow_graph::transpose::TransposedGraph;
+//use rustc_data_structures::control_flow_graph::reference;
 
 pub struct MoveUpPropagation;
 
@@ -31,54 +32,87 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);
         //let mir_clone = mir.clone();
+        let mir_immut: &Mir = mir; 
+        //let doms = mir.dominators();
+        let tgraph = TransposedGraph::with_start(mir_immut, mir.end_block());
+        let post_dominators = dominators(&tgraph);
         //let transposed_mir = TransposedGraph::new(mir_clone);
         //let dominators = dominators(&transposed_mir);
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
-        let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
-        for (tmp, lists) in candidates {
-            debug!("{:?} is a candidate", tmp);
-            // check IF
-            // -- Def: L = foo 
-            // is post dominated by
-            // -- Use: bar = ... L ...
-            // AND
-            // one the path from Def -> ~ -> Use
-            // there are no calls           
-            // THEN,
-            // replace Def wit
-            // -- Repl: bar = ... foo ...
+        //let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
+        let work_list: Vec<_> = tduf.lists.iter().map(|(_, ref lists)| {
+            if lists.uses.len() == 1 && lists.defs.len() == 1 {
 
-            let ldef = lists.defs.first();
-            let luse = lists.uses.first();
-            if ldef.is_post_dominated_by(luse) {
-                // do something
+
+                let ldef = match lists.defs.first() { 
+                    Some(x) => x, 
+                    None => panic!("we already checked the len?!?"),
+                };
+                let luse = match lists.uses.first() {
+                    Some(x) => x,
+                    None => panic!("we already checked the len?!?"),
+                };
+                debug!("the combindation of:");
+                luse.print(mir);
+                debug!("and:");
+                ldef.print(mir);
+                debug!("is a move up candidate");
+                if !any_funny_business(ldef, luse, mir, &post_dominators) {
+                    // do something
+                    debug!("we should move:");
+                    luse.print(mir);
+                    debug!("up to:");
+                    ldef.print(mir);
+                };
             }
+        }).collect();
 
+       // I wonder if there should be a NOP to preserve indexes ...
 
-
-            // I wonder if there should be a NOP to preserve indexes ...
-            
-        }
-    
-        // let candidates = tduf.uses.iter().filter(|&(_, ref uses)| uses.len() == 1);
-        // // for (&tmp, _) in candidates {
-        // //     // do something
-        // //     debug!("{:?} has only one use!", tmp);
-        // //     if let Some(v) = tduf.defs.get(&tmp) {
-        // //         debug!("{:?} has {} defs", tmp, v.len());
-        // //     } else {
-        // //         debug!("we didn't have any defs for {:?}?", tmp);
-        // //     }
-        // // }
-        // let c = candidates.filter(|&(tmp, _)| { 
-        //     if let Some(defs) = tduf.defs.get(tmp) {
-        //         defs.len() == 1
-        //     } else {
-        //         false
-        //     }
-        // });
     }
+}
+
+fn any_funny_business(ldef: &UseDefLocation, 
+                          luse: &UseDefLocation, 
+                          mir: &Mir,
+                          post_dominators: &Dominators<BasicBlock>) 
+                          -> bool {
+
+    // IF
+    // -- Def: L = foo 
+    // is post dominated by
+    // -- Use: bar = ... L ...
+    // AND
+    // on the path(s) from Def -> ~ -> Use
+    // there are no calls           
+    // THEN,
+    // replace Def wit
+    // -- Repl: bar = ... foo ...
+    
+    if ldef.is_post_dominated_by(luse, post_dominators) {
+        return true;
+    }
+    // TODO 1:
+    //   walk the paths from ldef -> ~ -> luse
+    //   make sure there are no calls
+    //   there can't be any borrows because we know luse is the only use
+    //   (because we checked before)
+    // TODO 2:
+    //   check if the luse is like: foo = ldef
+    //   if it's more compiled than that, we give up. for now ...
+
+
+    return false;
+}
+
+fn is_there_a_call_between(ldef: &UseDefLocation, 
+                           luse: &UseDefLocation, 
+                           mir: &Mir)
+                           -> bool {
+    // do the walk ...
+    return false;
+
 }
 
 impl Pass for MoveUpPropagation {}
@@ -100,7 +134,7 @@ impl UseDefLocation {
             }
         }
     }
-    fn is_post_dominated_by(&self, other: &Self, post_dominators: &Dominators<Mir>) -> bool {
+    fn is_post_dominated_by(&self, other: &Self, post_dominators: &Dominators<BasicBlock>) -> bool {
         if self.basic_block == other.basic_block {
             match (&self.inner_location, &other.inner_location) {
                 // Assumptions: Terminator post dominates all statements

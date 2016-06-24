@@ -41,7 +41,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
         //let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
-        let work_list: Vec<_> = tduf.lists.iter().map(|(_, ref lists)| {
+        let work_list: Vec<_> = tduf.lists.iter().map(|(&tmp, ref lists)| {
             if lists.uses.len() == 1 && lists.defs.len() == 1 {
 
 
@@ -58,7 +58,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                 debug!("and:");
                 ldef.print(mir);
                 debug!("is a move up candidate");
-                if !any_funny_business(ldef, luse, mir, &post_dominators) {
+                if !any_funny_business(ldef, luse, mir, &post_dominators, tmp) {
                     // do something
                     debug!("we should move:");
                     luse.print(mir);
@@ -73,11 +73,61 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
     }
 }
 
+fn get_next_locs(curr: UseDefLocation, mir: &Mir) -> Vec<UseDefLocation> {
+    match curr.inner_location {
+        InnerLocation::Terminator => {
+            mir.basic_blocks()[curr.basic_block].terminator().successors().iter().map(|&s| {
+                UseDefLocation {
+                    basic_block: s,
+                    inner_location: InnerLocation::StatementIndex(0),
+                }
+            }).collect()
+        }
+        InnerLocation::StatementIndex(idx) => {
+            if idx + 1 < mir.basic_blocks()[curr.basic_block].statements.len() {
+                vec![UseDefLocation{
+                    basic_block: curr.basic_block,
+                    inner_location: InnerLocation::StatementIndex(idx + 1),
+                }]
+            } else {
+                let next = UseDefLocation{basic_block: curr.basic_block, inner_location: InnerLocation::Terminator};
+                get_next_locs(next, mir)
+            }
+        }
+    }
+}
+
+fn paths_contain_call(start: UseDefLocation, target: UseDefLocation, mir: &Mir, visited: &mut HashMap<UseDefLocation, bool>) -> bool {
+    //   walk the paths from ldef -> ~ -> luse
+    //   make sure there are no calls
+    //   there can't be any borrows because we know luse is the only use
+    //   (because we checked before)
+    if start == target { 
+        false  
+    } else {
+        // check for out stopping condition,
+        // if we do not stop, go to the next location
+        if let TerminatorKind::Call {..} = mir.basic_blocks()[start.basic_block].terminator().kind {
+            true 
+        } else {
+            let mut any = false;
+            for &s in get_next_locs(start, mir).iter() {
+                if !visited.contains_key(&s) {
+                    visited.insert(s, true);
+                    any |= paths_contain_call(s, target, mir, visited);
+                }
+            }
+            any
+        }
+    }
+}
+
 fn any_funny_business(ldef: &UseDefLocation, 
-                          luse: &UseDefLocation, 
-                          mir: &Mir,
-                          post_dominators: &Dominators<BasicBlock>) 
-                          -> bool {
+                      luse: &UseDefLocation, 
+                      mir: &Mir,
+                      post_dominators: &Dominators<BasicBlock>,
+                      tmp: Temp) 
+                      -> bool {
 
     // IF
     // -- Def: L = foo 
@@ -90,34 +140,32 @@ fn any_funny_business(ldef: &UseDefLocation,
     // replace Def wit
     // -- Repl: bar = ... foo ...
     
-    if ldef.is_post_dominated_by(luse, post_dominators) {
+    let mut visited = HashMap::new();
+    if !ldef.is_post_dominated_by(luse, post_dominators) {
         return true;
+    };
+
+    if paths_contain_call(*ldef, *luse, mir, &mut visited) {
+        true;
     }
-    // TODO 1:
-    //   walk the paths from ldef -> ~ -> luse
-    //   make sure there are no calls
-    //   there can't be any borrows because we know luse is the only use
-    //   (because we checked before)
-    // TODO 2:
+
     //   check if the luse is like: foo = ldef
     //   if it's more compiled than that, we give up. for now ...
-
-
-    return false;
-}
-
-fn is_there_a_call_between(ldef: &UseDefLocation, 
-                           luse: &UseDefLocation, 
-                           mir: &Mir)
-                           -> bool {
-    // do the walk ...
-    return false;
-
+    if let InnerLocation::StatementIndex(idx) = luse.inner_location {
+        match mir.basic_blocks()[luse.basic_block].statements[idx].kind {
+            StatementKind::Assign(_, ref rval) => {
+                if let &Rvalue::Use(Operand::Consume(Lvalue::Temp(rtmp))) = rval {
+                    if rtmp == tmp { return false; };
+                }
+            }
+        } 
+    };
+    return true;
 }
 
 impl Pass for MoveUpPropagation {}
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 struct UseDefLocation {
     basic_block: BasicBlock,
     inner_location: InnerLocation,
@@ -152,7 +200,7 @@ impl UseDefLocation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 enum InnerLocation {
     StatementIndex(usize),
     Terminator,

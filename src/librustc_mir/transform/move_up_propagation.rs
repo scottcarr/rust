@@ -13,7 +13,7 @@ use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
 // use rustc_data_structures::indexed_vec::{Idx, IndexVec};
 use rustc::mir::visit::{Visitor, LvalueContext};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 //use std::collections::hash_map::Entry;
 use rustc_data_structures::tuple_slice::TupleSlice;
 //use rustc_data_structures::control_flow_graph::ControlFlowGraph;
@@ -32,19 +32,22 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);
         //let mir_clone = mir.clone();
-        let mir_immut: &Mir = mir; 
+        
         //let doms = mir.dominators();
-        let tgraph = TransposedGraph::with_start(mir_immut, mir.end_block());
-        let post_dominators = dominators(&tgraph);
+
+        let post_dominators = {
+            let mir_immut: &Mir = mir; 
+            let tgraph = TransposedGraph::with_start(mir_immut, mir_immut.end_block());
+            dominators(&tgraph)
+        };   
+
         //let transposed_mir = TransposedGraph::new(mir_clone);
         //let dominators = dominators(&transposed_mir);
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
         //let candidates = tduf.lists.iter().filter(|&(tmp, lists)| lists.uses.len() == 1 && lists.defs.len() == 1);
-        let work_list: Vec<_> = tduf.lists.iter().map(|(&tmp, ref lists)| {
+        let work_list: Vec<_> = tduf.lists.iter().filter(|&(&tmp, ref lists)| {
             if lists.uses.len() == 1 && lists.defs.len() == 1 {
-
-
                 let ldef = match lists.defs.first() { 
                     Some(x) => x, 
                     None => panic!("we already checked the len?!?"),
@@ -64,10 +67,31 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     luse.print(mir);
                     debug!("up to:");
                     ldef.print(mir);
-                };
+                    return true;
+                }
+                return false;
             }
+            return false;
         }).collect();
-
+        let mut old_2_new = HashMap::new();
+        let mut dead = HashSet::new();
+        for &(_, lists) in work_list.iter() {
+            let ldef = lists.defs.first().expect("we already checked the list had one element?");
+            let luse = lists.uses.first().expect("we already checked the list had one element?");
+            if let InnerLocation::StatementIndex(use_idx) = luse.inner_location {
+                if let InnerLocation::StatementIndex(def_idx) = ldef.inner_location {
+                    let bb_mut = mir.basic_blocks();
+                    let StatementKind::Assign(ref use_lval, _) = bb_mut[luse.basic_block].statements[use_idx].kind;
+                    let StatementKind::Assign(_, ref def_rval) = bb_mut[ldef.basic_block].statements[def_idx].kind;
+                    let new_statement = StatementKind::Assign(use_lval.clone(), def_rval.clone());
+                    old_2_new.insert(ldef, new_statement);
+                    dead.insert(luse);
+                    continue;
+                }
+            }
+            panic!("We should have already checked for this");
+        }
+        
        // I wonder if there should be a NOP to preserve indexes ...
 
     }
@@ -149,6 +173,11 @@ fn any_funny_business(ldef: &UseDefLocation,
         true;
     }
 
+    // we really only know how to replace statements for now ...
+    if let InnerLocation::Terminator = ldef.inner_location {
+        return true;
+    }
+
     //   check if the luse is like: foo = ldef
     //   if it's more compiled than that, we give up. for now ...
     if let InnerLocation::StatementIndex(idx) = luse.inner_location {
@@ -160,6 +189,7 @@ fn any_funny_business(ldef: &UseDefLocation,
             }
         } 
     };
+
     return true;
 }
 

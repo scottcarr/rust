@@ -91,8 +91,33 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
             }
             panic!("We should have already checked for this");
         }
-        
-       // I wonder if there should be a NOP to preserve indexes ...
+
+        {
+            let bbs = mir.basic_blocks_mut();
+            for &(loc, repl) in old_2_new {
+                // find basic block
+                // replace basic_block.statements[loc.idx] with out new one
+                let bb = loc.basic_block;
+                let bb_data = bbs[change_bb];
+                match loc.inner_loc {
+                    InnerLocation::StatementIndex(idx) => {
+                        let new_stmts = bb_data.statements.iter().enumerate().map(|&(stmt_idx, orig_stmt)| {
+                            if idx == stmt_idx {
+                                repl
+                            } else {
+                                orig_stmt
+                            }
+                        }).collect();
+                    }, 
+                    _ => panic!("we only replace statements");
+                }
+            }
+
+            for &loc in dead {
+                // find basic_block
+                // retain all basic_block.statements except loc.idx
+            }
+        }
 
     }
 }

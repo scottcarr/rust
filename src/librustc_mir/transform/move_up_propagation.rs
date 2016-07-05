@@ -11,14 +11,14 @@
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
-// use rustc_data_structures::indexed_vec::{Idx, IndexVec};
+use rustc_data_structures::indexed_vec::{Idx};
 use rustc::mir::visit::{Visitor, LvalueContext};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 //use std::collections::hash_map::Entry;
 use rustc_data_structures::tuple_slice::TupleSlice;
 //use rustc_data_structures::control_flow_graph::ControlFlowGraph;
-use rustc_data_structures::control_flow_graph::dominators::{dominators, Dominators};
-use rustc_data_structures::control_flow_graph::transpose::TransposedGraph;
+//use rustc_data_structures::control_flow_graph::dominators::{dominators, Dominators};
+//use rustc_data_structures::control_flow_graph::transpose::TransposedGraph;
 use rustc_data_structures::bitvec::BitVector;
 //use rustc_data_structures::control_flow_graph::reference;
 
@@ -43,73 +43,69 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);
 
-        let post_dominators_res = {
-            let mir_e = MirWithExit::new(mir);
-            let exit = mir_e.exit_node.clone();
-            let tgraph = TransposedGraph::with_start(mir_e, exit);
-            dominators(&tgraph)
-        };
+        // let post_dominators_res = {
+        //     let mir_e = MirWithExit::new(mir);
+        //     let exit = mir_e.exit_node.clone();
+        //     let tgraph = TransposedGraph::with_start(mir_e, exit);
+        //     dominators(&tgraph)
+        // };
 
-        let post_dominators = match post_dominators_res {
-            Ok(pdoms) => pdoms,
-            Err(_) => return, // we cant do the optimization when finding the post dominators fails
-        };
+        // let post_dominators = match post_dominators_res {
+        //     Ok(pdoms) => pdoms,
+        //     Err(_) => return, // we cant do the optimization when finding the post dominators fails
+        // };
 
         let tduf = TempDefUseFinder::new(mir);
         tduf.print(mir);
-        let work_list: Vec<_> = tduf.lists.iter().filter(|&(&tmp, ref lists)| {
-            if lists.uses.len() == 1 && lists.defs.len() == 1 {
-                let ldef = match lists.defs.first() {
-                    Some(x) => x,
-                    None => panic!("we already checked the len?!?"),
-                };
-                let luse = match lists.uses.first() {
-                    Some(x) => x,
-                    None => panic!("we already checked the len?!?"),
-                };
-                debug!("the combindation of:");
-                luse.print(mir);
-                debug!("and:");
-                ldef.print(mir);
-                debug!("is a move up candidate");
-                if !any_funny_business(ldef, luse, mir, &post_dominators, tmp) {
-                    // do something
-                    debug!("we should move:");
-                    luse.print(mir);
-                    debug!("up to:");
-                    ldef.print(mir);
-                    return true;
-                }
-                return false;
-            }
-            return false;
-        }).collect();
-        debug!("we're going to do {:?} replacements", work_list.len());
+        
         let mut old_2_new = HashMap::new();
         let mut dead = HashMap::new();
-        for &(_, lists) in work_list.iter() {
-            let ldef = lists.defs.first().expect("we already checked the list had one element?");
-            let luse = lists.uses.first().expect("we already checked the list had one element?");
-            if let InnerLocation::StatementIndex(use_idx) = luse.inner_location {
-                if let InnerLocation::StatementIndex(def_idx) = ldef.inner_location {
+        for tmp in tduf.get_temps_that_satisfy(mir) {
+            if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(&tmp) {
+                if let Ok((def_bb, def_idx)) = tduf.get_one_def_as_idx(&tmp) {
                     let bb_mut = mir.basic_blocks();
-                    let StatementKind::Assign(ref use_lval, _) = bb_mut[luse.basic_block]
-                                                                 .statements[use_idx].kind;
-                    let StatementKind::Assign(_, ref def_rval) = bb_mut[ldef.basic_block]
-                                                                 .statements[def_idx].kind;
+                    let StatementKind::Assign(ref use_lval, _) = bb_mut[use_bb]
+                                                                    .statements[use_idx].kind;
+                    let StatementKind::Assign(_, ref def_rval) = bb_mut[def_bb]
+                                                                    .statements[def_idx].kind;
                     let new_statement = StatementKind::Assign(use_lval.clone(), def_rval.clone());
-                    let num_statements = bb_mut[luse.basic_block].statements.len();
-                    old_2_new.entry(ldef.basic_block)
-                             .or_insert(HashMap::new())
-                             .insert(def_idx, new_statement);
-                    dead.entry(luse.basic_block)
+                    let num_statements = bb_mut[use_bb].statements.len();
+                    old_2_new.entry(def_bb)
+                                .or_insert(HashMap::new())
+                                .insert(def_idx, new_statement);
+                    dead.entry(use_bb)
                         .or_insert(BitVector::new(num_statements))
                         .insert(use_idx);
-                    continue;
                 }
             }
-            panic!("We should have already checked for this");
         }
+        debug!("we're going to do {:?} replacements", dead.iter().len());
+
+
+        //for &(_, lists) in work_list.iter() {
+        // for &(luse, ldef) in work_list.iter() {
+        //     // let ldef = lists.defs.first().expect("we already checked the list had one element?");
+        //     // let luse = lists.uses.first().expect("we already checked the list had one element?");
+        //     if let InnerLocation::StatementIndex(use_idx) = luse.inner_location {
+        //         if let InnerLocation::StatementIndex(def_idx) = ldef.inner_location {
+        //             let bb_mut = mir.basic_blocks();
+        //             let StatementKind::Assign(ref use_lval, _) = bb_mut[luse.basic_block]
+        //                                                          .statements[use_idx].kind;
+        //             let StatementKind::Assign(_, ref def_rval) = bb_mut[ldef.basic_block]
+        //                                                          .statements[def_idx].kind;
+        //             let new_statement = StatementKind::Assign(use_lval.clone(), def_rval.clone());
+        //             let num_statements = bb_mut[luse.basic_block].statements.len();
+        //             old_2_new.entry(ldef.basic_block)
+        //                      .or_insert(HashMap::new())
+        //                      .insert(def_idx, new_statement);
+        //             dead.entry(luse.basic_block)
+        //                 .or_insert(BitVector::new(num_statements))
+        //                 .insert(use_idx);
+        //             continue;
+        //         }
+        //     }
+        //     panic!("We should have already checked for this");
+        // }
 
         {
             let bbs = mir.basic_blocks_mut();
@@ -145,7 +141,6 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                 });
             }
         }
-
     }
 }
 
@@ -178,7 +173,7 @@ fn get_next_locs(curr: UseDefLocation, mir: &Mir) -> Vec<UseDefLocation> {
 fn paths_contain_call(start: UseDefLocation,
                       target: UseDefLocation,
                       mir: &Mir,
-                      visited: &mut HashMap<UseDefLocation, bool>)
+                      visited: &mut BitVector)
                       -> bool {
     //   walk the paths from ldef -> ~ -> luse
     //   make sure there are no calls
@@ -194,8 +189,8 @@ fn paths_contain_call(start: UseDefLocation,
         } else {
             let mut any = false;
             for &s in get_next_locs(start, mir).iter() {
-                if !visited.contains_key(&s) {
-                    visited.insert(s, true);
+                if !visited.contains(s.basic_block.index()) {
+                    visited.insert(s.basic_block.index());
                     any |= paths_contain_call(s, target, mir, visited);
                 }
             }
@@ -204,55 +199,65 @@ fn paths_contain_call(start: UseDefLocation,
     }
 }
 
-fn any_funny_business(ldef: &UseDefLocation,
-                      luse: &UseDefLocation,
-                      mir: &Mir,
-                      post_dominators: &Dominators<BasicBlock>,
-                      tmp: Temp)
-                      -> bool {
+// fn any_funny_business() -> bool {
 
-    // IF
-    // -- Def: L = foo
-    // is post dominated by
-    // -- Use: bar = ... L ...
-    // AND
-    // on the path(s) from Def -> ~ -> Use
-    // there are no calls
-    // THEN,
-    // replace Def wit
-    // -- Repl: bar = ... foo ...
+//     if lists.uses.len() == 1 && lists.defs.len() == 1 {
+//     let ldef = match lists.defs.first() {
+//         Some(x) => x,
+//         None => panic!("we already checked the len?!?"),
+//     };
+//     let luse = match lists.uses.first() {
+//         Some(x) => x,
+//         None => panic!("we already checked the len?!?"),
+//     };
+//     debug!("the combindation of:");
+//     luse.print(mir);
+//     debug!("and:");
+//     ldef.print(mir);
+//     debug!("is a move up candidate");
+    
+//     // IF
+//     // -- Def: L = foo
+//     // is post dominated by
+//     // -- Use: bar = ... L ...
+//     // AND
+//     // on the path(s) from Def -> ~ -> Use
+//     // there are no calls
+//     // THEN,
+//     // replace Def wit
+//     // -- Repl: bar = ... foo ...
 
-    let mut visited = HashMap::new();
-    if !ldef.is_post_dominated_by(luse, post_dominators) {
-        return true;
-    };
+//     let mut visited = BitVector::new(mir.basic_blocks().len());
+//     if !ldef.is_post_dominated_by(luse, post_dominators) {
+//         return true;
+//     };
 
-    if paths_contain_call(*ldef, *luse, mir, &mut visited) {
-        true;
-    }
+//     if paths_contain_call(*ldef, *luse, mir, &mut visited) {
+//         true;
+//     }
 
-    // we really only know how to replace statements for now ...
-    if let InnerLocation::Terminator = ldef.inner_location {
-        return true;
-    }
-    if let InnerLocation::Terminator = luse.inner_location {
-        return true;
-    }
+//     // we really only know how to replace statements for now ...
+//     if let InnerLocation::Terminator = ldef.inner_location {
+//         return true;
+//     }
+//     if let InnerLocation::Terminator = luse.inner_location {
+//         return true;
+//     }
 
-    //   check if the luse is like: foo = ldef
-    //   if it's more compiled than that, we give up. for now ...
-    if let InnerLocation::StatementIndex(idx) = luse.inner_location {
-        match mir.basic_blocks()[luse.basic_block].statements[idx].kind {
-            StatementKind::Assign(_, ref rval) => {
-                if let &Rvalue::Use(Operand::Consume(Lvalue::Temp(rtmp))) = rval {
-                    if rtmp == tmp { return false; };
-                }
-            }
-        }
-    };
+//     //   check if the luse is like: foo = ldef
+//     //   if it's more compiled than that, we give up. for now ...
+//     if let InnerLocation::StatementIndex(idx) = luse.inner_location {
+//         match mir.basic_blocks()[luse.basic_block].statements[idx].kind {
+//             StatementKind::Assign(_, ref rval) => {
+//                 if let &Rvalue::Use(Operand::Consume(Lvalue::Temp(rtmp))) = rval {
+//                     if rtmp == tmp { return false; };
+//                 }
+//             }
+//         }
+//     };
 
-    return true;
-}
+//     return true;
+// }
 
 impl Pass for MoveUpPropagation {}
 
@@ -273,23 +278,23 @@ impl UseDefLocation {
             }
         }
     }
-    fn is_post_dominated_by(&self, other: &Self, post_dominators: &Dominators<BasicBlock>) -> bool {
-        if self.basic_block == other.basic_block {
-            match (&self.inner_location, &other.inner_location) {
-                // Assumptions: Terminator post dominates all statements
-                // Terminator does not post dominate itself
-                (&InnerLocation::StatementIndex(_), &InnerLocation::Terminator) => { true }
-                (&InnerLocation::Terminator, &InnerLocation::Terminator) => { false },
-                (&InnerLocation::Terminator, &InnerLocation::StatementIndex(_)) => { false }
-                (&InnerLocation::StatementIndex(self_idx),
-                 &InnerLocation::StatementIndex(other_idx)) => {
-                    self_idx < other_idx
-                }
-            }
-        } else { // self.basic_block != other.basic_block
-            post_dominators.is_dominated_by(self.basic_block, other.basic_block)
-        }
-    }
+    // fn is_post_dominated_by(&self, other: &Self, post_dominators: &Dominators<BasicBlock>) -> bool {
+    //     if self.basic_block == other.basic_block {
+    //         match (&self.inner_location, &other.inner_location) {
+    //             // Assumptions: Terminator post dominates all statements
+    //             // Terminator does not post dominate itself
+    //             (&InnerLocation::StatementIndex(_), &InnerLocation::Terminator) => { true }
+    //             (&InnerLocation::Terminator, &InnerLocation::Terminator) => { false },
+    //             (&InnerLocation::Terminator, &InnerLocation::StatementIndex(_)) => { false }
+    //             (&InnerLocation::StatementIndex(self_idx),
+    //              &InnerLocation::StatementIndex(other_idx)) => {
+    //                 self_idx < other_idx
+    //             }
+    //         }
+    //     } else { // self.basic_block != other.basic_block
+    //         post_dominators.is_dominated_by(self.basic_block, other.basic_block)
+    //     }
+    // }
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
@@ -314,6 +319,7 @@ impl DefUseLists {
 
 struct TempDefUseFinder {
     pub lists: HashMap<Temp, DefUseLists>,
+    pub is_borrowed: HashSet<Temp>,
     curr_basic_block: BasicBlock,
     statement_index: usize,
     kind: AccessKind,
@@ -325,10 +331,16 @@ enum AccessKind {
     Use,
 }
 
+enum GetOneErr {
+    NotAStatement,
+    NotOne,
+}
+
 impl TempDefUseFinder {
     fn new(mir: &Mir) -> Self {
         let mut tuc = TempDefUseFinder {
             lists: HashMap::new(),
+            is_borrowed: HashSet::new(),
             curr_basic_block: START_BLOCK,
             statement_index: 0,
             kind: AccessKind::Def, // will get updated when we see an assign
@@ -363,6 +375,45 @@ impl TempDefUseFinder {
             }
             _ => {}
         }
+    }
+    fn get_one_use_as_idx(&self, temp: &Temp) -> Result<(BasicBlock, usize), GetOneErr> {
+        if self.lists[temp].uses.len() != 1 {
+            return Err(GetOneErr::NotOne);
+        };
+        let use_loc = self.lists[temp].uses.first().unwrap();
+        let use_bb = use_loc.basic_block;
+        let use_idx = match use_loc.inner_location {
+            InnerLocation::StatementIndex(idx) => idx,
+            _ => return Err(GetOneErr::NotAStatement),
+        };
+        Ok((use_bb, use_idx)) 
+    }
+    fn get_one_def_as_idx(&self, temp: &Temp) -> Result<(BasicBlock, usize), GetOneErr> {
+        if self.lists[temp].defs.len() != 1 {
+            return Err(GetOneErr::NotOne);
+        };
+        let def_loc = self.lists[temp].defs.first().unwrap();
+        let def_bb = def_loc.basic_block;
+        let def_idx = match def_loc.inner_location {
+            InnerLocation::StatementIndex(idx) => idx,
+            _ => return Err(GetOneErr::NotAStatement),
+        };
+        Ok((def_bb, def_idx))
+    }
+    fn get_temps_that_satisfy(&self, mir: &Mir) -> Vec<Temp> {
+        self.lists.iter().filter(|&(_, lists)| {
+            lists.uses.len() == 1 && lists.defs.len() == 1     
+        }).map(|(&tmp, _)| {
+            tmp
+        }).filter(|tmp| {
+            if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(&tmp) {
+                if let StatementKind::Assign(Lvalue::Temp(ref def), _) = mir.basic_blocks()[use_bb].statements[use_idx].kind {
+                    !self.is_borrowed.contains(def);
+                }
+            }
+            false
+        }).collect()
+        // TODO also check all paths starting from Def(tmp) to exit for our condition
     }
     fn print(&self, mir: &Mir) {
         for (k, ref v) in self.lists.iter() {
@@ -402,6 +453,11 @@ impl<'a> Visitor<'a> for TempDefUseFinder {
     }
     fn visit_lvalue(&mut self, lvalue: &Lvalue<'a>, context: LvalueContext) {
         self.add_to_map_if_temp(lvalue);
+        if let LvalueContext::Borrow{ .. } = context {
+            if let &Lvalue::Temp(tmp) = lvalue {
+                self.is_borrowed.insert(tmp);
+            }
+        };
         self.super_lvalue(lvalue, context);
     }
     fn visit_terminator(&mut self, block: BasicBlock, terminator: &Terminator<'a>) {

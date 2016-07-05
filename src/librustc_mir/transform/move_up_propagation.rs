@@ -170,6 +170,7 @@ fn get_next_locs(curr: UseDefLocation, mir: &Mir) -> Vec<UseDefLocation> {
     }
 }
 
+// This could more easily be rewritten as a MirVisitor
 fn paths_contain_call(start: UseDefLocation,
                       target: UseDefLocation,
                       mir: &Mir,
@@ -317,9 +318,9 @@ impl DefUseLists {
     }
 }
 
-struct TempDefUseFinder {
+struct TempDefUseFinder<'a> {
     pub lists: HashMap<Temp, DefUseLists>,
-    pub is_borrowed: HashSet<Temp>,
+    pub is_borrowed: HashSet<Lvalue<'a>>,
     curr_basic_block: BasicBlock,
     statement_index: usize,
     kind: AccessKind,
@@ -336,8 +337,8 @@ enum GetOneErr {
     NotOne,
 }
 
-impl TempDefUseFinder {
-    fn new(mir: &Mir) -> Self {
+impl<'a> TempDefUseFinder<'a> {
+    fn new(mir: &Mir<'a>) -> Self {
         let mut tuc = TempDefUseFinder {
             lists: HashMap::new(),
             is_borrowed: HashSet::new(),
@@ -349,7 +350,7 @@ impl TempDefUseFinder {
         tuc.visit_mir(mir);
         tuc
     }
-    fn add_to_map_if_temp<'a>(&mut self,
+    fn add_to_map_if_temp(&mut self,
                           lvalue: &Lvalue<'a>) {
         match lvalue {
             &Lvalue::Temp(tmp_id) => {
@@ -407,13 +408,18 @@ impl TempDefUseFinder {
             tmp
         }).filter(|tmp| {
             if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(&tmp) {
-                if let StatementKind::Assign(Lvalue::Temp(ref def), _) = mir.basic_blocks()[use_bb].statements[use_idx].kind {
-                    !self.is_borrowed.contains(def);
-                }
+                // this handles the constraint: DEST is not borrowed (currently: not borrowed ever)
+                let StatementKind::Assign(ref dest, _) = mir.basic_blocks()[use_bb].statements[use_idx].kind;
+                return !self.is_borrowed.contains(&dest);
             }
             false
+        }).filter(|tmp| {
+            // also check all paths starting from Def(tmp = ...) to "exit" for our condition
+            let mut visited = BitVector::new(mir.basic_blocks().len());
+            let ldef = self.lists[tmp].defs.first().unwrap();
+            let luse = self.lists[tmp].uses.first().unwrap();
+            !paths_contain_call(*luse, *ldef, mir, &mut visited)
         }).collect()
-        // TODO also check all paths starting from Def(tmp) to exit for our condition
     }
     fn print(&self, mir: &Mir) {
         for (k, ref v) in self.lists.iter() {
@@ -433,7 +439,7 @@ impl TempDefUseFinder {
         }
     }
 }
-impl<'a> Visitor<'a> for TempDefUseFinder {
+impl<'a> Visitor<'a> for TempDefUseFinder<'a> {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'a>) {
         self.curr_basic_block = block;
         self.statement_index = 0;
@@ -454,9 +460,7 @@ impl<'a> Visitor<'a> for TempDefUseFinder {
     fn visit_lvalue(&mut self, lvalue: &Lvalue<'a>, context: LvalueContext) {
         self.add_to_map_if_temp(lvalue);
         if let LvalueContext::Borrow{ .. } = context {
-            if let &Lvalue::Temp(tmp) = lvalue {
-                self.is_borrowed.insert(tmp);
-            }
+            self.is_borrowed.insert(lvalue.clone());
         };
         self.super_lvalue(lvalue, context);
     }

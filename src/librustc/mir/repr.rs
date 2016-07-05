@@ -714,7 +714,7 @@ newtype_index!(Local, "local");
 
 /// A path to a value; something that can be evaluated without
 /// changing or disturbing program state.
-#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable, Eq, Hash)]
 pub enum Lvalue<'tcx> {
     /// local variable declared by the user
     Var(Var),
@@ -872,7 +872,7 @@ pub struct VisibilityScopeData {
 /// These are values that can appear inside an rvalue (or an index
 /// lvalue). They are intentionally limited to prevent rvalues from
 /// being nested in one another.
-#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable, Eq, Hash)]
 pub enum Operand<'tcx> {
     Consume(Lvalue<'tcx>),
     Constant(Constant<'tcx>),

@@ -11,7 +11,7 @@
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
-use rustc_data_structures::indexed_vec::{Idx};
+//use rustc_data_structures::indexed_vec::{Idx};
 use rustc::mir::visit::{Visitor, LvalueContext};
 use std::collections::{HashMap, HashSet};
 use rustc_data_structures::tuple_slice::TupleSlice;
@@ -100,78 +100,136 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
     }
 }
 
-fn get_next_locs(curr: UseDefLocation, mir: &Mir) -> Vec<UseDefLocation> {
-    match curr.inner_location {
-        InnerLocation::Terminator => {
-            mir.basic_blocks()[curr.basic_block].terminator().successors().iter().map(|&s| {
-                UseDefLocation {
-                    basic_block: s,
-                    inner_location: InnerLocation::StatementIndex(0),
-                }
-            }).collect()
-        }
-        InnerLocation::StatementIndex(idx) => {
-            if idx + 1 < mir.basic_blocks()[curr.basic_block].statements.len() {
-                vec![UseDefLocation{
-                    basic_block: curr.basic_block,
-                    inner_location: InnerLocation::StatementIndex(idx + 1),
-                }]
-            } else {
-                let next = UseDefLocation{ basic_block: curr.basic_block,
-                                           inner_location: InnerLocation::Terminator,
-                };
-                get_next_locs(next, mir)
-            }
-        }
-    }
-}
+// fn get_next_locs(curr: UseDefLocation, mir: &Mir) -> Vec<UseDefLocation> {
+//     match curr.inner_location {
+//         InnerLocation::Terminator => {
+//             mir.basic_blocks()[curr.basic_block].terminator().successors().iter().map(|&s| {
+//                 UseDefLocation {
+//                     basic_block: s,
+//                     inner_location: InnerLocation::StatementIndex(0),
+//                 }
+//             }).collect()
+//         }
+//         InnerLocation::StatementIndex(idx) => {
+//             if idx + 1 < mir.basic_blocks()[curr.basic_block].statements.len() {
+//                 vec![UseDefLocation{
+//                     basic_block: curr.basic_block,
+//                     inner_location: InnerLocation::StatementIndex(idx + 1),
+//                 }]
+//             } else {
+//                 let next = UseDefLocation{ basic_block: curr.basic_block,
+//                                            inner_location: InnerLocation::Terminator,
+//                 };
+//                 get_next_locs(next, mir)
+//             }
+//         }
+//     }
+// }
 
 // This could be rewritten as a MirVisitor
-fn paths_contain_call(start: UseDefLocation,
-                      target: UseDefLocation,
-                      mir: &Mir,
-                      visited: &mut BitVector)
-                      -> bool {
-    //   walk the paths from ldef -> ~ -> luse
-    //   make sure there are no calls 
-    if start == target {
-        false
-    } else {
-        // check for out stopping condition,
-        // if we do not stop, go to the next location
-        if let TerminatorKind::Call {..} = mir.basic_blocks()[start.basic_block].terminator().kind {
-            true
-        } else {
-            let mut any = false;
-            for &s in get_next_locs(start, mir).iter() {
-                if !visited.contains(s.basic_block.index()) {
-                    visited.insert(s.basic_block.index());
-                    any |= paths_contain_call(s, target, mir, visited);
-                }
-            }
-            any
-        }
-    }
+// fn paths_contain_call(start: UseDefLocation,
+//                       target: UseDefLocation,
+//                       mir: &Mir,
+//                       visited: &mut BitVector)
+//                       -> bool {
+//     //   walk the paths from ldef -> ~ -> luse
+//     //   make sure there are no calls 
+//     if start == target {
+//         false
+//     } else {
+//         // check for out stopping condition,
+//         // if we do not stop, go to the next location
+//         if let TerminatorKind::Call {..} = mir.basic_blocks()[start.basic_block].terminator().kind {
+//             true
+//         } else {
+//             let mut any = false;
+//             for &s in get_next_locs(start, mir).iter() {
+//                 if !visited.contains(s.basic_block.index()) {
+//                     visited.insert(s.basic_block.index());
+//                     any |= paths_contain_call(s, target, mir, visited);
+//                 }
+//             }
+//             any
+//         }
+//     }
+// }
+
+fn paths_satisfy_our_condition<'a>(dest: &Lvalue<'a>, 
+                                   end_statement: &Statement<'a>, 
+                                   end_block: BasicBlock,
+                                   //start_statement: &Statement<'a>,
+                                   start_block: BasicBlock,
+                                   start_index: usize,
+                                   start_block_data: &BasicBlockData<'a>) 
+                                   -> bool {
+    let mut upf = UseOnPathFinder{ 
+        dest: dest,
+        end_statement: end_statement,
+        end_block: end_block,
+        found_intermediate_use_of_dest: false,
+        found_call: false,
+        found_end_statement: false,
+    };
+    upf.visit_first_block(start_block, start_block_data, start_index);
+    upf.found_end_statement && !upf.found_intermediate_use_of_dest && !upf.found_call
 }
 
-fn paths_contain_intermediate_use() {
-    let upf = UseOnPathFinder::new();
-    upf.visit(start_statement);
-    upf.found_use
-}
 struct UseOnPathFinder<'a> {
-    target_val: Lvalue<'a>,
-    end_statement: Statement<'a>,
-    found_use: bool
+    dest: &'a Lvalue<'a>,
+    end_statement: &'a Statement<'a>,
+    end_block: BasicBlock,
+    found_intermediate_use_of_dest: bool,
+    found_call: bool,
+    found_end_statement: bool,
+}
+
+impl<'a> UseOnPathFinder<'a> {
+    fn visit_first_block(&mut self,
+                         block: BasicBlock,
+                         data: &BasicBlockData<'a>,
+                         start_index: usize) {
+
+        for (i, statement) in data.statements.iter().enumerate() {
+            if i > start_index {
+                self.visit_statement(block, statement);
+            }
+        }
+
+        if let Some(ref terminator) = data.terminator {
+            self.visit_terminator(block, terminator);
+        }
+    }
 }
 
 impl<'a> Visitor<'a> for UseOnPathFinder<'a> {
+    fn visit_statement(&mut self, block: BasicBlock, statement: &Statement<'a>) {
+        if self.end_block == block && self.end_statement == statement {
+            debug!("found end statement!");
+            self.found_end_statement = true;
+            return; // stop searching
+        }
+        self.super_statement(block, statement);
+    }
     fn visit_lvalue(&mut self, lvalue: &Lvalue<'a>, context: LvalueContext) {
-        if lvalue == self.target_val {
-            self.found_use = true
+        if lvalue == self.dest {
+            debug!("found intermediate use of dest!");
+            self.found_intermediate_use_of_dest = true;
+            return; // stop searching
+        } else {
+            self.super_lvalue(lvalue, context);
         }
     }
-    // TODO other methods
+    fn visit_terminator_kind(&mut self, block: BasicBlock, kind: &TerminatorKind<'a>) {
+        match *kind {
+            TerminatorKind::Call{..} => {
+                debug!("found call!");
+                self.found_call = true;
+                return; // stop searching
+            }
+            _ => {}
+        }
+        self.super_terminator_kind(block, kind);
+    }
 }
 
 impl Pass for MoveUpPropagation {}
@@ -300,6 +358,7 @@ impl<'a> TempDefUseFinder<'a> {
                 false
             }
         }).map(|(lval, _)| {
+            debug!("{:?} has 1 def and 1 use", lval);
             if let &Lvalue::Temp(tmp) = lval {
                 (lval, tmp)
             } else {
@@ -309,23 +368,38 @@ impl<'a> TempDefUseFinder<'a> {
             if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(tmp) {
                 // this checks the constraint: DEST is not borrowed (currently: not borrowed ever)
                 let StatementKind::Assign(ref dest, _) = mir.basic_blocks()[use_bb].statements[use_idx].kind;
-                self.is_borrowed.contains(&dest)
+                if self.is_borrowed.contains(&dest) {
+                    debug!("dest was borrowed: {:?}!", dest);
+                    false
+                } else {
+                    debug!("dest was not borrowed! {:?}", dest);
+                    true
+                }
+            } else {
+                false
+            }
+        // }).filter(|&(ref lval, _)| {
+        //     // also check all paths starting from Def(tmp = ...) to "exit" for our condition
+        //     // currently: we just check if there is a call on the path
+        //     let mut visited = BitVector::new(mir.basic_blocks().len());
+        //     let ldef = self.lists[*lval].defs.first().unwrap();
+        //     let luse = self.lists[*lval].uses.first().unwrap();
+        //     !paths_contain_call(*luse, *ldef, mir, &mut visited)
+        }).filter(|&(_, tmp)| {
+            // 1) check all paths starting from Def(tmp = ...) to Use(DEST = tmp) do not intermediately use DEST 
+            //    and do not contain calls
+            // 2) check all paths starting from Def(tmp = ...) to "exit" either go through Use(DEST = tmp) or don't use DEST
+            //    * calls count as uses
+            if let Ok((end_block, use_idx)) = self.get_one_use_as_idx(tmp) {
+                if let Ok((start_block, def_idx)) = self.get_one_def_as_idx(tmp) {
+                    let ref start_statement = mir.basic_blocks()[start_block].statements[def_idx];
+                    let ref end_statement = mir.basic_blocks()[end_block].statements[use_idx];
+                    let StatementKind::Assign(ref dest, _) = end_statement.kind;
+                    let ref start_block_data = mir.basic_blocks()[start_block];
+                    return paths_satisfy_our_condition(dest, end_statement, end_block, start_statement, start_block, def_idx, start_block_data);
+                }
             }
             false
-        }).filter(|&(ref lval, _)| {
-            // also check all paths starting from Def(tmp = ...) to "exit" for our condition
-            // currently: we just check if there is a call on the path
-            let mut visited = BitVector::new(mir.basic_blocks().len());
-            let ldef = self.lists[*lval].defs.first().unwrap();
-            let luse = self.lists[*lval].uses.first().unwrap();
-            !paths_contain_call(*luse, *ldef, mir, &mut visited)
-        }).filter(|&(ref lval, _)| {
-            // also check all paths starting from Def(tmp = ...) to Use(DEST = tmp) do
-            // not intermediately use DEST
-            let mut visited = BitVector::new(mir.basic_blocks().len());
-            let ldef = self.lists[*lval].defs.first().unwrap();
-            let luse = self.lists[*lval].uses.first().unwrap();
-            !paths_contain_intermediate_use(*luse, *ldef, mir, &mut visited)
         }).map(|(_, tmp)| {
             tmp
         }).collect()

@@ -11,7 +11,7 @@
 use common::Config;
 use common::{CompileFail, ParseFail, Pretty, RunFail, RunPass, RunPassValgrind};
 use common::{Codegen, DebugInfoLldb, DebugInfoGdb, Rustdoc, CodegenUnits};
-use common::{Incremental, RunMake, Ui};
+use common::{Incremental, RunMake, Ui, MirOpt};
 use errors::{self, ErrorKind, Error};
 use json;
 use header::TestProps;
@@ -117,6 +117,7 @@ impl<'test> TestCx<'test> {
             Incremental => self.run_incremental_test(),
             RunMake => self.run_rmake_test(),
             Ui => self.run_ui_test(),
+            MirOpt => self.run_mir_opt_test(),
         }
     }
 
@@ -1336,7 +1337,20 @@ actual:\n\
                                 .map(|s| s.to_string()));
                 }
             }
-
+            MirOpt => {
+                args.extend(["-Z", 
+                             "dump-mir=all",
+                             "-Z"]
+                            .iter()
+                            .map(|s| s.to_string()));
+                let mut dir_opt = "dump-mir-dir=".to_string();
+                dir_opt.push_str(self.config.build_base
+                                            .as_path()
+                                            .to_str()
+                                            .unwrap("build base should be valid path"));
+                args.push(dir_opt);
+                //args.extend(["dump-mir-path=".to_string().push_str(self.config.build_base.into_os_string())]);
+            }
             RunFail |
             RunPass |
             RunPassValgrind |
@@ -2143,6 +2157,22 @@ actual:\n\
             self.fatal_proc_rec(&format!("{} errors occurred comparing output.", errors),
                                 &proc_res);
         }
+    }
+
+    fn run_mir_opt_test(&self) {
+        let proc_res = self.compile_test();
+
+        if !proc_res.status.success() {
+            self.fatal_proc_rec("compilation failed!", &proc_res);
+        }
+
+        let proc_res = self.exec_compiled_test();
+
+        if !proc_res.status.success() {
+            self.fatal_proc_rec("test run failed!", &proc_res);
+        }
+
+        //panic!("mir opt test not implemented");
     }
 
     fn normalize_output(&self, output: &str) -> String {

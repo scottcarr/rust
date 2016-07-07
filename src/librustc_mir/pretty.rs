@@ -66,9 +66,15 @@ pub fn dump_mir<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         _ => String::new()
     };
 
+    let mut file_path = String::new();
+    if let Some(ref file_dir) = tcx.sess.opts.debugging_opts.dump_mir_dir {
+        file_path.push_str(file_dir);
+    };
     let file_name = format!("rustc.node{}{}.{}.{}.mir",
                             node_id, promotion_id, pass_name, disambiguator);
-    let _ = fs::File::create(&file_name).and_then(|mut file| {
+    file_path.push_str("/");
+    file_path.push_str(&file_name);
+    let _ = fs::File::create(&file_path).and_then(|mut file| {
         try!(writeln!(file, "// MIR for `{}`", node_path));
         try!(writeln!(file, "// node_id = {}", node_id));
         try!(writeln!(file, "// pass_name = {}", pass_name));

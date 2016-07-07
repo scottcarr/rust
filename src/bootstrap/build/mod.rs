@@ -17,16 +17,6 @@
 //!
 //! More documentation can be found in each respective module below.
 
-extern crate build_helper;
-extern crate cmake;
-extern crate filetime;
-extern crate gcc;
-extern crate getopts;
-extern crate md5;
-extern crate num_cpus;
-extern crate rustc_serialize;
-extern crate toml;
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
@@ -35,8 +25,10 @@ use std::path::{PathBuf, Path};
 use std::process::Command;
 
 use build_helper::{run_silent, output};
+use gcc;
+use num_cpus;
 
-use util::{exe, mtime, libdir, add_lib_path};
+use build::util::{exe, mtime, libdir, add_lib_path};
 
 /// A helper macro to `unwrap` a result except also print out details like:
 ///
@@ -65,7 +57,7 @@ mod flags;
 mod native;
 mod sanity;
 mod step;
-pub mod util;
+mod util;
 
 #[cfg(windows)]
 mod job;
@@ -75,8 +67,8 @@ mod job {
     pub unsafe fn setup() {}
 }
 
-pub use config::Config;
-pub use flags::Flags;
+pub use build::config::Config;
+pub use build::flags::Flags;
 
 /// A structure representing a Rust compiler.
 ///
@@ -203,7 +195,7 @@ impl Build {
 
     /// Executes the entire build, as configured by the flags and configuration.
     pub fn build(&mut self) {
-        use step::Source::*;
+        use build::step::Source::*;
 
         unsafe {
             job::setup();
@@ -375,10 +367,6 @@ impl Build {
                     check::compiletest(self, &compiler, target.target,
                                        "pretty", "run-pass-valgrind");
                 }
-                CheckMirOpt { compiler } => {
-                    check::compiletest(self, &compiler, target.target,
-                                       "mir-opt", "mir-opt");
-                }
                 CheckCodegen { compiler } => {
                     check::compiletest(self, &compiler, target.target,
                                        "codegen", "codegen");
@@ -394,6 +382,10 @@ impl Build {
                 CheckUi { compiler } => {
                     check::compiletest(self, &compiler, target.target,
                                        "ui", "ui");
+                }
+                CheckMirOpt { compiler } => {
+                    check::compiletest(self, &compiler, target.target,
+                                       "mir-opt", "mir-opt");
                 }
                 CheckDebuginfo { compiler } => {
                     if target.target.contains("msvc") {

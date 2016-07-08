@@ -1347,7 +1347,7 @@ actual:\n\
                 dir_opt.push_str(self.config.build_base
                                             .as_path()
                                             .to_str()
-                                            .unwrap("build base should be valid path"));
+                                            .unwrap());
                 args.push(dir_opt);
                 //args.extend(["dump-mir-path=".to_string().push_str(self.config.build_base.into_os_string())]);
             }

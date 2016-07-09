@@ -383,6 +383,10 @@ impl Build {
                     check::compiletest(self, &compiler, target.target,
                                        "ui", "ui");
                 }
+                CheckMirOpt { compiler } => {
+                    check::compiletest(self, &compiler, target.target,
+                                       "mir-opt", "mir-opt");
+                }
                 CheckDebuginfo { compiler } => {
                     if target.target.contains("msvc") {
                         // nothing to do

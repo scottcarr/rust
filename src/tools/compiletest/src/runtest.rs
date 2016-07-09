@@ -1338,7 +1338,7 @@ actual:\n\
                 }
             }
             MirOpt => {
-                args.extend(["-Z", 
+                args.extend(["-Z",
                              "dump-mir=all",
                              "-Z"]
                             .iter()
@@ -1349,7 +1349,6 @@ actual:\n\
                                             .to_str()
                                             .unwrap());
                 args.push(dir_opt);
-                //args.extend(["dump-mir-path=".to_string().push_str(self.config.build_base.into_os_string())]);
             }
             RunFail |
             RunPass |

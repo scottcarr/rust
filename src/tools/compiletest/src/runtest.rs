@@ -1347,7 +1347,7 @@ actual:\n\
 
                 let mir_dump_dir = self.get_mir_dump_dir();
                 if !mir_dump_dir.exists() {
-                    fs::create_dir(mir_dump_dir.clone()).expect("the dir should exist");    
+                    fs::create_dir(mir_dump_dir.clone()).expect("the dir should exist");
                 }
                 let mut dir_opt = "dump-mir-dir=".to_string();
                 dir_opt.push_str(mir_dump_dir.to_str().unwrap());
@@ -2180,7 +2180,9 @@ actual:\n\
 
     fn check_mir_dump(&self) {
         let mut test_file_contents = String::new();
-        fs::File::open(self.testpaths.file.clone()).unwrap().read_to_string(&mut test_file_contents).unwrap();
+        fs::File::open(self.testpaths.file.clone()).unwrap()
+                                                   .read_to_string(&mut test_file_contents)
+                                                   .unwrap();
         if let Some(idx) =  test_file_contents.find("// END RUST SOURCE") {
             let (_, tests_text) = test_file_contents.split_at(idx + "// END_RUST SOURCE".len());
             let tests_text_str = String::from(tests_text);
@@ -2195,14 +2197,14 @@ actual:\n\
                     let (_, t) = l.split_at("// END ".len());
                     if Some(t) != curr_test {
                         panic!("mismatched START END test name");
-                    } 
+                    }
                     self.compare_mir_test_output(curr_test.unwrap(), &curr_test_contents);
                 } else if l.is_empty() {
                     // ignore
                 } else if l.starts_with("// ") {
                     let (_, test_content) = l.split_at("// ".len());
                     curr_test_contents.push(test_content);
-                } 
+                }
             }
         }
     }
@@ -2219,10 +2221,10 @@ actual:\n\
         dumped_file.read_to_string(&mut dumped_string).unwrap();
         let dumped_lines = dumped_string.lines().filter(|l| !l.is_empty());
         for (dumped, expected) in dumped_lines.zip(expected_content.iter()) {
-            debug!("found: {:?}", dumped.trim());
-            debug!("expected: {:?}", expected.trim());
-            let d = dumped.trim();
-            let e = expected.trim();
+            let d = normalize_mir_line(dumped);
+            let e = normalize_mir_line(expected);
+            debug!("found: {:?}", d.trim());
+            debug!("expected: {:?}", e.trim());
             if d != e {
                 panic!("dumped mir didn't match expectation")
             }
@@ -2233,7 +2235,7 @@ actual:\n\
         let mut mir_dump_dir = PathBuf::from(self.config.build_base
                                                     .as_path()
                                                     .to_str()
-                                                    .unwrap()); 
+                                                    .unwrap());
         debug!("input_file: {:?}", self.testpaths.file);
         mir_dump_dir.push(self.testpaths.file.file_stem().unwrap().to_str().unwrap());
         mir_dump_dir
@@ -2368,3 +2370,12 @@ enum TargetLocation {
     ThisDirectory(PathBuf),
 }
 
+fn normalize_mir_line(line: &str) -> String {
+    let no_comments = if let Some(idx) = line.find("//") {
+        let (l, _) = line.split_at(idx);
+        l
+    } else {
+        line
+    };
+    no_comments.replace(char::is_whitespace, "")
+}

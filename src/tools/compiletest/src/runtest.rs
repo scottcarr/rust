@@ -2199,6 +2199,8 @@ actual:\n\
                         panic!("mismatched START END test name");
                     }
                     self.compare_mir_test_output(curr_test.unwrap(), &curr_test_contents);
+                    curr_test = None;
+                    curr_test_contents.clear();
                 } else if l.is_empty() {
                     // ignore
                 } else if l.starts_with("// ") {

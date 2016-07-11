@@ -1343,11 +1343,16 @@ actual:\n\
                              "-Z"]
                             .iter()
                             .map(|s| s.to_string()));
+
+
+                let mir_dump_dir = self.get_mir_dump_dir();
+                if !mir_dump_dir.exists() {
+                    fs::create_dir(mir_dump_dir.clone()).expect("the dir should exist");    
+                }
                 let mut dir_opt = "dump-mir-dir=".to_string();
-                dir_opt.push_str(self.config.build_base
-                                            .as_path()
-                                            .to_str()
-                                            .unwrap());
+                dir_opt.push_str(mir_dump_dir.to_str().unwrap());
+                debug!("dir_opt: {:?}", dir_opt);
+
                 args.push(dir_opt);
             }
             RunFail |
@@ -2170,8 +2175,68 @@ actual:\n\
         if !proc_res.status.success() {
             self.fatal_proc_rec("test run failed!", &proc_res);
         }
+        self.check_mir_dump();
+    }
 
-        //panic!("mir opt test not implemented");
+    fn check_mir_dump(&self) {
+        let mut test_file_contents = String::new();
+        fs::File::open(self.testpaths.file.clone()).unwrap().read_to_string(&mut test_file_contents).unwrap();
+        if let Some(idx) =  test_file_contents.find("// END RUST SOURCE") {
+            let (_, tests_text) = test_file_contents.split_at(idx + "// END_RUST SOURCE".len());
+            let tests_text_str = String::from(tests_text);
+            let mut curr_test : Option<&str> = None;
+            let mut curr_test_contents = Vec::new();
+            for l in tests_text_str.lines() {
+                debug!("line: {:?}", l);
+                if l.starts_with("// START ") {
+                    let (_, t) = l.split_at("// START ".len());
+                    curr_test = Some(t);
+                } else if l.starts_with("// END") {
+                    let (_, t) = l.split_at("// END ".len());
+                    if Some(t) != curr_test {
+                        panic!("mismatched START END test name");
+                    } 
+                    self.compare_mir_test_output(curr_test.unwrap(), &curr_test_contents);
+                } else if l.is_empty() {
+                    // ignore
+                } else if l.starts_with("// ") {
+                    let (_, test_content) = l.split_at("// ".len());
+                    curr_test_contents.push(test_content);
+                } 
+            }
+        }
+    }
+
+    fn compare_mir_test_output(&self, test_name: &str, expected_content: &Vec<&str>) {
+        let mut output_file = PathBuf::new();
+        output_file.push(self.get_mir_dump_dir());
+        output_file.push(test_name);
+        debug!("comparing the contests of: {:?}", output_file);
+        debug!("with: {:?}", expected_content);
+
+        let mut dumped_file = fs::File::open(output_file.clone()).unwrap();
+        let mut dumped_string = String::new();
+        dumped_file.read_to_string(&mut dumped_string).unwrap();
+        let dumped_lines = dumped_string.lines().filter(|l| !l.is_empty());
+        for (dumped, expected) in dumped_lines.zip(expected_content.iter()) {
+            debug!("found: {:?}", dumped.trim());
+            debug!("expected: {:?}", expected.trim());
+            let d = dumped.trim();
+            let e = expected.trim();
+            if d != e {
+                panic!("dumped mir didn't match expectation")
+            }
+        }
+    }
+
+    fn get_mir_dump_dir(&self) -> PathBuf {
+        let mut mir_dump_dir = PathBuf::from(self.config.build_base
+                                                    .as_path()
+                                                    .to_str()
+                                                    .unwrap()); 
+        debug!("input_file: {:?}", self.testpaths.file);
+        mir_dump_dir.push(self.testpaths.file.file_stem().unwrap().to_str().unwrap());
+        mir_dump_dir
     }
 
     fn normalize_output(&self, output: &str) -> String {

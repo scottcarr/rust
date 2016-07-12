@@ -36,64 +36,53 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);
 
-        let tduf = TempDefUseFinder::new(mir);
-        tduf.print(mir);
+        let mut opt_counter = 0;
+        while let Some((use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
+            let new_statement = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
 
-        let mut old_2_new = HashMap::new();
-        let mut dead = HashMap::new();
-        for tmp in tduf.get_temps_that_satisfy(mir) {
-            if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(tmp) {
-                if let Ok((def_bb, def_idx)) = tduf.get_one_def_as_idx(tmp) {
-                    let bb_mut = mir.basic_blocks();
-                    let StatementKind::Assign(ref use_lval, _) = bb_mut[use_bb]
-                                                                    .statements[use_idx].kind;
-                    let StatementKind::Assign(_, ref def_rval) = bb_mut[def_bb]
-                                                                    .statements[def_idx].kind;
-                    let new_statement = StatementKind::Assign(use_lval.clone(), def_rval.clone());
-                    let num_statements = bb_mut[use_bb].statements.len();
-                    old_2_new.entry(def_bb)
-                                .or_insert(HashMap::new())
-                                .insert(def_idx, new_statement);
-                    dead.entry(use_bb)
-                        .or_insert(BitVector::new(num_statements))
-                        .insert(use_idx);
-                }
-            }
-        }
-        debug!("we're going to do {:?} replacements", dead.iter().len());
-
-        let bbs = mir.basic_blocks_mut();
-        for (bb, repls) in old_2_new {
-            let new_stmts: Vec<_> = bbs[bb].statements
-                                            .iter()
-                                            .enumerate()
-                                            .map(|(stmt_idx, orig_stmt)| {
-                if let Some(repl) = repls.get(&stmt_idx) {
-                    let repl_stmt = Statement { kind: repl.clone(),
-                                                source_info: orig_stmt.source_info,
-                    };
-                    debug!("replacing {:?} with {:?}", orig_stmt, repl_stmt);
-                    repl_stmt
+            let mut bbs = mir.basic_blocks_mut();
+            // replace Def(tmp = ...) with DEST = ... 
+            let new_def_stmts: Vec<_> = bbs[def_bb].statements
+                                                    .iter()
+                                                    .enumerate()
+                                                    .map(|(stmt_idx, orig_stmt)| {
+                if stmt_idx == def_idx {
+                    Statement { kind: new_statement.clone(), source_info: orig_stmt.source_info }
                 } else {
                     orig_stmt.clone()
                 }
             }).collect();
-            bbs[bb] = BasicBlockData {
-                statements: new_stmts,
-                terminator: bbs[bb].terminator.clone(),
-                is_cleanup: bbs[bb].is_cleanup,
+            bbs[def_bb] = BasicBlockData {
+                statements: new_def_stmts,
+                terminator: bbs[def_bb].terminator.clone(),
+                is_cleanup: bbs[def_bb].is_cleanup,
             };
-        }
 
-        for (bb, dead_idxs) in dead {
+            // remove DEST = tmp
             let mut idx_cnt = 0;
-            bbs[bb].statements.retain(|_| {
-                let dead = dead_idxs.contains(idx_cnt);
+            bbs[use_bb].statements.retain(|_| {
+                let dead = idx_cnt == use_idx;
                 idx_cnt += 1;
                 !dead
             });
+            opt_counter += 1;
         }
-    }
+        debug!("we did {:?} optimizations", opt_counter);
+    } 
+}
+
+fn get_replacement_statement<'a>(mir: &Mir<'a>, 
+                             use_bb: BasicBlock,
+                             use_idx: usize,
+                             def_bb: BasicBlock,
+                             def_idx: usize)
+                             -> StatementKind<'a> {
+    let bbs = mir.basic_blocks();
+    let StatementKind::Assign(ref use_lval, _) = bbs[use_bb]
+                                                    .statements[use_idx].kind;
+    let StatementKind::Assign(_, ref def_rval) = bbs[def_bb]
+                                                    .statements[def_idx].kind;
+    StatementKind::Assign(use_lval.clone(), def_rval.clone())
 }
 
 fn paths_satisfy_our_condition<'a>(dest: &Lvalue<'a>,
@@ -231,6 +220,18 @@ enum AccessKind {
 enum GetOneErr {
     NotAStatement,
     NotOne,
+}
+
+fn get_one_optimization(mir: &Mir) -> Option<(BasicBlock, usize, BasicBlock, usize)> {
+    let tduf = TempDefUseFinder::new(mir);
+    if let Some(&temp) = tduf.get_temps_that_satisfy(mir).first() {
+        if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(temp) {
+            if let Ok((def_bb, def_idx)) = tduf.get_one_def_as_idx(temp) {
+                return Some((use_bb, use_idx, def_bb, def_idx));
+            } 
+        }
+    }
+    None
 }
 
 impl<'a> TempDefUseFinder<'a> {

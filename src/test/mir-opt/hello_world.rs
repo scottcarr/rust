@@ -39,14 +39,14 @@ fn main() {
 //         tmp5 = promoted0;                // scope 0 at <std macros>:1:33: 1:58
 //         tmp4 = &(*tmp5);                 // scope 0 at <std macros>:1:33: 1:58
 //         tmp3 = tmp4 as &[std::fmt::ArgumentV1] (Unsize); // scope 0 at <std macros>:1:33: 1:58
-//         tmp1 = std::fmt::Arguments::new_v1(tmp2, tmp3) -> bb2; // scope 0 at <std macros>:2:27: 2:58
+//         tmp1 = std::fmt::Arguments::new_v1(tmp2, tmp3) -> bb2; // scope 0 at ...
 //     }
 //     bb2: {
 //         tmp0 = std::io::_print(tmp1) -> bb3; // scope 0 at <std macros>:2:1: 2:60
 //     }
 //     bb3: {
-//         return = ();                     // scope 0 at /Users/scarr/mozilla/rust-workspace/mir-test/rust/src/test/mir-opt/hello_world.rs:13:11: 15:2
-//         return;                          // scope 0 at /Users/scarr/mozilla/rust-workspace/mir-test/rust/src/test/mir-opt/hello_world.rs:13:1: 15:2
+//         return = ();                     // scope 0 at ...
+//         return;                          // scope 0 at ...
 //     }
 // }
 // END rustc.node4.ElaborateDrops.before.mir

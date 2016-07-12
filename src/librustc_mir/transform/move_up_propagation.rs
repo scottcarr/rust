@@ -41,7 +41,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
             let new_statement = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
 
             let mut bbs = mir.basic_blocks_mut();
-            // replace Def(tmp = ...) with DEST = ... 
+            // replace Def(tmp = ...) with DEST = ...
             let new_def_stmts: Vec<_> = bbs[def_bb].statements
                                                     .iter()
                                                     .enumerate()
@@ -68,10 +68,10 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
             opt_counter += 1;
         }
         debug!("we did {:?} optimizations", opt_counter);
-    } 
+    }
 }
 
-fn get_replacement_statement<'a>(mir: &Mir<'a>, 
+fn get_replacement_statement<'a>(mir: &Mir<'a>,
                              use_bb: BasicBlock,
                              use_idx: usize,
                              def_bb: BasicBlock,
@@ -228,7 +228,7 @@ fn get_one_optimization(mir: &Mir) -> Option<(BasicBlock, usize, BasicBlock, usi
         if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(temp) {
             if let Ok((def_bb, def_idx)) = tduf.get_one_def_as_idx(temp) {
                 return Some((use_bb, use_idx, def_bb, def_idx));
-            } 
+            }
         }
     }
     None
@@ -330,7 +330,7 @@ impl<'a> TempDefUseFinder<'a> {
             //    * either go through Use(DEST = tmp) or don't use DEST
             //    ** calls count as uses
             // 3) check that the address of DEST cannot change
-            //    * currently, check that DEST is a plain (stack-allocated?) lvalue 
+            //    * currently, check that DEST is a plain (stack-allocated?) lvalue
             //      (not a projection)
             if let Ok((end_block, use_idx)) = self.get_one_use_as_idx(tmp) {
                 if let Ok((start_block, def_idx)) = self.get_one_def_as_idx(tmp) {

@@ -2221,15 +2221,29 @@ actual:\n\
         let mut dumped_file = fs::File::open(output_file.clone()).unwrap();
         let mut dumped_string = String::new();
         dumped_file.read_to_string(&mut dumped_string).unwrap();
-        let dumped_lines = dumped_string.lines().filter(|l| !l.is_empty());
-        for (dumped, expected) in dumped_lines.zip(expected_content.iter()) {
-            let d = normalize_mir_line(dumped);
-            let e = normalize_mir_line(expected);
-            debug!("found: {:?}", d.trim());
-            debug!("expected: {:?}", e.trim());
-            if d != e {
-                panic!("dumped mir didn't match expectation")
+        let mut dumped_lines = dumped_string.lines().filter(|l| !l.is_empty());
+        let mut expected_lines = expected_content.iter().filter(|l| !l.is_empty());
+
+        // We expect each non-empty line from expected_content to appear
+        // in the dump in order, but there may be extra lines interleaved
+        while let Some(expected_line) = expected_lines.next() {
+            let e_norm = normalize_mir_line(expected_line);
+            if e_norm.is_empty() { 
+                continue; 
+            };
+            let mut found = false;
+            while let Some(dumped_line) = dumped_lines.next() {
+                let d_norm = normalize_mir_line(dumped_line);
+                debug!("found: {:?}", d_norm);
+                debug!("expected: {:?}", e_norm);
+                if e_norm == d_norm {
+                    found = true;
+                    break;
+                };
             }
+            if !found {
+                panic!("ran out of mir dump output to match against");
+            }  
         }
     }
 

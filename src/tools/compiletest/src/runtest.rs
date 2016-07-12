@@ -2228,8 +2228,8 @@ actual:\n\
         // in the dump in order, but there may be extra lines interleaved
         while let Some(expected_line) = expected_lines.next() {
             let e_norm = normalize_mir_line(expected_line);
-            if e_norm.is_empty() { 
-                continue; 
+            if e_norm.is_empty() {
+                continue;
             };
             let mut found = false;
             while let Some(dumped_line) = dumped_lines.next() {
@@ -2243,7 +2243,7 @@ actual:\n\
             }
             if !found {
                 panic!("ran out of mir dump output to match against");
-            }  
+            }
         }
     }
 

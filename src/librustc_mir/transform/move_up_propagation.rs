@@ -14,7 +14,7 @@ use rustc::mir::transform::{MirPass, MirSource, Pass};
 use rustc::mir::visit::{Visitor, LvalueContext};
 use std::collections::{HashMap, HashSet};
 use rustc_data_structures::tuple_slice::TupleSlice;
-use rustc_data_structures::bitvec::BitVector;
+//use rustc_data_structures::bitvec::BitVector;
 
 // get rid of post-dominators and instead use the notion of "could not read x"
 // if we have Def tmp0 = ...
@@ -32,42 +32,42 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     src: MirSource,
                     mir: &mut Mir<'tcx>) {
-        let node_id = src.item_id();
-        let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
-        debug!("move-up-propagation on {:?}", node_path);
+        // let node_id = src.item_id();
+        // let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
+        // debug!("move-up-propagation on {:?}", node_path);
 
-        let mut opt_counter = 0;
-        while let Some((use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
-            let new_statement = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
+        // let mut opt_counter = 0;
+        // while let Some((use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
+        //     let new_statement = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
 
-            let mut bbs = mir.basic_blocks_mut();
-            // replace Def(tmp = ...) with DEST = ...
-            let new_def_stmts: Vec<_> = bbs[def_bb].statements
-                                                    .iter()
-                                                    .enumerate()
-                                                    .map(|(stmt_idx, orig_stmt)| {
-                if stmt_idx == def_idx {
-                    Statement { kind: new_statement.clone(), source_info: orig_stmt.source_info }
-                } else {
-                    orig_stmt.clone()
-                }
-            }).collect();
-            bbs[def_bb] = BasicBlockData {
-                statements: new_def_stmts,
-                terminator: bbs[def_bb].terminator.clone(),
-                is_cleanup: bbs[def_bb].is_cleanup,
-            };
+        //     let mut bbs = mir.basic_blocks_mut();
+        //     // replace Def(tmp = ...) with DEST = ...
+        //     let new_def_stmts: Vec<_> = bbs[def_bb].statements
+        //                                             .iter()
+        //                                             .enumerate()
+        //                                             .map(|(stmt_idx, orig_stmt)| {
+        //         if stmt_idx == def_idx {
+        //             Statement { kind: new_statement.clone(), source_info: orig_stmt.source_info }
+        //         } else {
+        //             orig_stmt.clone()
+        //         }
+        //     }).collect();
+        //     bbs[def_bb] = BasicBlockData {
+        //         statements: new_def_stmts,
+        //         terminator: bbs[def_bb].terminator.clone(),
+        //         is_cleanup: bbs[def_bb].is_cleanup,
+        //     };
 
-            // remove DEST = tmp
-            let mut idx_cnt = 0;
-            bbs[use_bb].statements.retain(|_| {
-                let dead = idx_cnt == use_idx;
-                idx_cnt += 1;
-                !dead
-            });
-            opt_counter += 1;
-        }
-        debug!("we did {:?} optimizations", opt_counter);
+        //     // remove DEST = tmp
+        //     let mut idx_cnt = 0;
+        //     bbs[use_bb].statements.retain(|_| {
+        //         let dead = idx_cnt == use_idx;
+        //         idx_cnt += 1;
+        //         !dead
+        //     });
+        //     opt_counter += 1;
+        // }
+        // debug!("we did {:?} optimizations", opt_counter);
     }
 }
 
@@ -169,6 +169,7 @@ struct UseDefLocation {
     basic_block: BasicBlock,
     inner_location: InnerLocation,
 }
+
 impl UseDefLocation {
     fn print(&self, mir: &Mir) {
         let ref bb = mir[self.basic_block];

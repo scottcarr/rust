@@ -39,7 +39,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
 
         let mut opt_counter = 0;
         while let Some((use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
-            let new_statement = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
+            let new_statement_kind = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
 
             let mut bbs = mir.basic_blocks_mut();
             // replace Def(tmp = ...) with DEST = ...
@@ -48,7 +48,9 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                                                     .enumerate()
                                                     .map(|(stmt_idx, orig_stmt)| {
                 if stmt_idx == def_idx {
-                    Statement { kind: new_statement.clone(), source_info: orig_stmt.source_info }
+                    let new_statement = Statement { kind: new_statement_kind.clone(), source_info: orig_stmt.source_info };
+                    debug!("replacing: {:?} with {:?}.", orig_stmt, new_statement);
+                    new_statement
                 } else {
                     orig_stmt.clone()
                 }
@@ -61,9 +63,12 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
 
             // remove DEST = tmp
             let mut idx_cnt = 0;
-            bbs[use_bb].statements.retain(|_| {
+            bbs[use_bb].statements.retain(|orig_stmt| {
                 let dead = idx_cnt == use_idx;
                 idx_cnt += 1;
+                if dead {
+                    debug!("deleting: {:?}", orig_stmt);
+                }
                 !dead
             });
             opt_counter += 1;
@@ -188,8 +193,6 @@ impl<'a> Visitor<'a> for UseOnPathFinder<'a> {
         self.super_terminator_kind(block, kind);
     }
 }
-
-
 
 struct DefUseLists {
     pub defs: Vec<UseDefLocation>,

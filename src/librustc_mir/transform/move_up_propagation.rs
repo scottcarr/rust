@@ -78,19 +78,19 @@ struct UseDefLocation {
     inner_location: InnerLocation,
 }
 
-impl UseDefLocation {
-    fn print(&self, mir: &Mir) {
-        let ref bb = mir[self.basic_block];
-        match self.inner_location {
-            InnerLocation::StatementIndex(idx) => {
-                debug!("{:?}", bb.statements[idx]);
-            },
-            InnerLocation::Terminator => {
-                debug!("{:?}", bb.terminator);
-            }
-        }
-    }
-}
+// impl UseDefLocation {
+//     fn print(&self, mir: &Mir) {
+//         let ref bb = mir[self.basic_block];
+//         match self.inner_location {
+//             InnerLocation::StatementIndex(idx) => {
+//                 debug!("{:?}", bb.statements[idx]);
+//             },
+//             InnerLocation::Terminator => {
+//                 debug!("{:?}", bb.terminator);
+//             }
+//         }
+//     }
+// }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 enum InnerLocation {
@@ -355,23 +355,23 @@ impl<'a> TempDefUseFinder<'a> {
             tmp
         }).collect()
     }
-    fn print(&self, mir: &Mir) {
-        for (k, ref v) in self.lists.iter() {
-            debug!("{:?} uses:", k);
-            debug!("{:?}", v.uses);
-            // this assertion was wrong
-            // you can have an unused temporary, ex: the result of a call is never used
-            //assert!(v.uses.len() > 0); // every temp should have at least one use
-            v.uses.iter().map(|e| UseDefLocation::print(&e, mir)).count();
-        }
-        for (k, ref v) in self.lists.iter() {
-            debug!("{:?} defs:", k);
-            debug!("{:?}", v.defs);
-            // this may be too strict? maybe the def was optimized out?
-            //assert!(v.defs.len() > 0); // every temp should have at least one def
-            v.defs.iter().map(|e| UseDefLocation::print(&e, mir)).count();
-        }
-    }
+    // fn print(&self, mir: &Mir) {
+    //     for (k, ref v) in self.lists.iter() {
+    //         debug!("{:?} uses:", k);
+    //         debug!("{:?}", v.uses);
+    //         // this assertion was wrong
+    //         // you can have an unused temporary, ex: the result of a call is never used
+    //         //assert!(v.uses.len() > 0); // every temp should have at least one use
+    //         v.uses.iter().map(|e| UseDefLocation::print(&e, mir)).count();
+    //     }
+    //     for (k, ref v) in self.lists.iter() {
+    //         debug!("{:?} defs:", k);
+    //         debug!("{:?}", v.defs);
+    //         // this may be too strict? maybe the def was optimized out?
+    //         //assert!(v.defs.len() > 0); // every temp should have at least one def
+    //         v.defs.iter().map(|e| UseDefLocation::print(&e, mir)).count();
+    //     }
+    // }
 }
 impl<'a> Visitor<'a> for TempDefUseFinder<'a> {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'a>) {

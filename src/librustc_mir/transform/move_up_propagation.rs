@@ -39,7 +39,11 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
 
         let mut opt_counter = 0;
         while let Some((use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
-            let new_statement_kind = get_replacement_statement(mir, use_bb, use_idx, def_bb, def_idx);
+            let new_statement_kind = get_replacement_statement(mir,
+                                                               use_bb,
+                                                               use_idx,
+                                                               def_bb,
+                                                               def_idx);
 
             let mut bbs = mir.basic_blocks_mut();
             // replace Def(tmp = ...) with DEST = ...
@@ -48,7 +52,10 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                                                     .enumerate()
                                                     .map(|(stmt_idx, orig_stmt)| {
                 if stmt_idx == def_idx {
-                    let new_statement = Statement { kind: new_statement_kind.clone(), source_info: orig_stmt.source_info };
+                    let new_statement = Statement {
+                        kind: new_statement_kind.clone(),
+                        source_info: orig_stmt.source_info
+                    };
                     debug!("replacing: {:?} with {:?}.", orig_stmt, new_statement);
                     new_statement
                 } else {
@@ -321,7 +328,7 @@ impl<'a> TempDefUseFinder<'a> {
                 // we can only really replace DEST = tmp
                 // not more complex expressions
                 if let &Rvalue::Use(Operand::Consume(ref use_lval)) = rhs {
-                    if use_lval != lval { 
+                    if use_lval != lval {
                         return false; // we should never get here anyway
                     }
                 } else {
@@ -330,7 +337,7 @@ impl<'a> TempDefUseFinder<'a> {
                 if self.is_borrowed.contains(&dest) {
                     debug!("dest was borrowed: {:?}!", dest);
                     return false;
-                } 
+                }
                 true
             } else {
                 false

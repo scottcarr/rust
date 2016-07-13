@@ -311,19 +311,27 @@ impl<'a> TempDefUseFinder<'a> {
             } else {
                 panic!("we already checked that it was a temp");
             }
-        }).filter(|&(_, tmp)| {
+        }).filter(|&(lval, tmp)| {
             if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(tmp) {
                 // this checks the constraint: DEST is not borrowed (currently: not borrowed ever)
-                let StatementKind::Assign(ref dest, _) = mir.basic_blocks()[use_bb]
+                let StatementKind::Assign(ref dest, ref rhs) = mir.basic_blocks()[use_bb]
                                                             .statements[use_idx]
                                                             .kind;
+
+                // we can only really replace DEST = tmp
+                // not more complex expressions
+                if let &Rvalue::Use(Operand::Consume(ref use_lval)) = rhs {
+                    if use_lval != lval { 
+                        return false; // we should never get here anyway
+                    }
+                } else {
+                    return false;
+                }
                 if self.is_borrowed.contains(&dest) {
                     debug!("dest was borrowed: {:?}!", dest);
-                    false
-                } else {
-                    debug!("dest was not borrowed! {:?}", dest);
-                    true
-                }
+                    return false;
+                } 
+                true
             } else {
                 false
             }

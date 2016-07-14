@@ -11,9 +11,11 @@
 use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
-use rustc::mir::visit::{Visitor, LvalueContext};
+use rustc::mir::visit::{Visitor, LvalueContext, MutVisitor};
 use std::collections::{HashMap, HashSet};
 use rustc_data_structures::tuple_slice::TupleSlice;
+use rustc_data_structures::bitvec::BitVector;
+use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
 // get rid of post-dominators and instead use the notion of "could not read x"
 // if we have Def tmp0 = ...
@@ -38,49 +40,93 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         debug!("move-up-propagation on {:?}", node_path);
 
         let mut opt_counter = 0;
-        while let Some((use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
+        let mut dead_temps = BitVector::new(mir.temp_decls.len());
+        while let Some((tmp, use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
             let new_statement_kind = get_replacement_statement(mir,
                                                                use_bb,
                                                                use_idx,
                                                                def_bb,
                                                                def_idx);
+            {
+                let mut bbs = mir.basic_blocks_mut();
+                // replace Def(tmp = ...) with DEST = ...
+                let new_def_stmts: Vec<_> = bbs[def_bb].statements
+                                                        .iter()
+                                                        .enumerate()
+                                                        .map(|(stmt_idx, orig_stmt)| {
+                    if stmt_idx == def_idx {
+                        let new_statement = Statement {
+                            kind: new_statement_kind.clone(),
+                            source_info: orig_stmt.source_info
+                        };
+                        debug!("replacing: {:?} with {:?}.", orig_stmt, new_statement);
+                        new_statement
+                    } else {
+                        orig_stmt.clone()
+                    }
+                }).collect();
+                bbs[def_bb] = BasicBlockData {
+                    statements: new_def_stmts,
+                    terminator: bbs[def_bb].terminator.clone(),
+                    is_cleanup: bbs[def_bb].is_cleanup,
+                };
 
-            let mut bbs = mir.basic_blocks_mut();
-            // replace Def(tmp = ...) with DEST = ...
-            let new_def_stmts: Vec<_> = bbs[def_bb].statements
-                                                    .iter()
-                                                    .enumerate()
-                                                    .map(|(stmt_idx, orig_stmt)| {
-                if stmt_idx == def_idx {
-                    let new_statement = Statement {
-                        kind: new_statement_kind.clone(),
-                        source_info: orig_stmt.source_info
-                    };
-                    debug!("replacing: {:?} with {:?}.", orig_stmt, new_statement);
-                    new_statement
-                } else {
-                    orig_stmt.clone()
-                }
-            }).collect();
-            bbs[def_bb] = BasicBlockData {
-                statements: new_def_stmts,
-                terminator: bbs[def_bb].terminator.clone(),
-                is_cleanup: bbs[def_bb].is_cleanup,
-            };
+                // remove DEST = tmp
+                let mut idx_cnt = 0;
+                bbs[use_bb].statements.retain(|orig_stmt| {
+                    let dead = idx_cnt == use_idx;
+                    idx_cnt += 1;
+                    if dead {
+                        debug!("deleting: {:?}", orig_stmt);
+                    }
+                    !dead
+                });
+            }
 
-            // remove DEST = tmp
-            let mut idx_cnt = 0;
-            bbs[use_bb].statements.retain(|orig_stmt| {
-                let dead = idx_cnt == use_idx;
-                idx_cnt += 1;
-                if dead {
-                    debug!("deleting: {:?}", orig_stmt);
-                }
-                !dead
-            });
+            debug!("deleting the decl of: {:?}", tmp);
+            dead_temps.insert(tmp.index());
             opt_counter += 1;
         }
+        cleanup_temps(mir, dead_temps);
         debug!("we did {:?} optimizations", opt_counter);
+    }
+}
+
+fn cleanup_temps(mir: &mut Mir, dead_temps: BitVector) {
+    let mut curr = 0;
+    let mut new_vals: IndexVec<Temp, Lvalue> = IndexVec::with_capacity(mir.temp_decls.len());
+    for i in 0..mir.temp_decls.len() {
+        if dead_temps.contains(i) {
+            new_vals.push(Lvalue::Temp(Temp::new(0))); // we should never encounter these anyway
+        } else {
+            new_vals.push(Lvalue::Temp(Temp::new(curr)));
+            curr += 1;
+        }
+    }
+    let mut tr = TempRewriter { new_vals: new_vals };
+    tr.visit_mir(mir);
+    let mut new_decls = IndexVec::new();
+    for (idx, e) in mir.temp_decls.iter_enumerated() {
+        if !dead_temps.contains(idx.index()) {
+            new_decls.push(e.clone());
+        }
+    }
+    mir.temp_decls = new_decls;
+}
+
+struct TempRewriter<'a> {
+    new_vals: IndexVec<Temp, Lvalue<'a>>,
+}
+
+impl<'a> MutVisitor<'a> for TempRewriter<'a> {
+    fn visit_lvalue(&mut self, lvalue: &mut Lvalue<'a>, context: LvalueContext) {
+        match lvalue {
+            &mut Lvalue::Temp(idx) => { 
+                *lvalue = self.new_vals[idx].clone();
+            }
+            _ => {}
+        }
+        self.super_lvalue(lvalue, context);
     }
 }
 
@@ -234,12 +280,12 @@ enum GetOneErr {
     NotOne,
 }
 
-fn get_one_optimization(mir: &Mir) -> Option<(BasicBlock, usize, BasicBlock, usize)> {
+fn get_one_optimization(mir: &Mir) -> Option<(Temp, BasicBlock, usize, BasicBlock, usize)> {
     let tduf = TempDefUseFinder::new(mir);
     if let Some(&temp) = tduf.get_temps_that_satisfy(mir).first() {
         if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(temp) {
             if let Ok((def_bb, def_idx)) = tduf.get_one_def_as_idx(temp) {
-                return Some((use_bb, use_idx, def_bb, def_idx));
+                return Some((temp, use_bb, use_idx, def_bb, def_idx));
             }
         }
     }

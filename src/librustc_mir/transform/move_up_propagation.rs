@@ -121,7 +121,7 @@ struct TempRewriter<'a> {
 impl<'a> MutVisitor<'a> for TempRewriter<'a> {
     fn visit_lvalue(&mut self, lvalue: &mut Lvalue<'a>, context: LvalueContext) {
         match lvalue {
-            &mut Lvalue::Temp(idx) => { 
+            &mut Lvalue::Temp(idx) => {
                 *lvalue = self.new_vals[idx].clone();
             }
             _ => {}

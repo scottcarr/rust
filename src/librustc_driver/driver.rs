@@ -211,7 +211,7 @@ pub fn compile_input(sess: &Session,
             }
 
             // Discard interned strings as they are no longer required.
-            token::get_ident_interner().clear();
+            token::clear_ident_interner();
 
             Ok((outputs, trans))
         })??
@@ -480,7 +480,7 @@ pub fn phase_1_parse_input<'a>(sess: &'a Session,
                                input: &Input)
                                -> PResult<'a, ast::Crate> {
     // These may be left in an incoherent state after a previous compile.
-    // `clear_tables` and `get_ident_interner().clear()` can be used to free
+    // `clear_tables` and `clear_ident_interner` can be used to free
     // memory, but they do not restore the initial state.
     syntax::ext::mtwt::reset_tables();
     token::reset_ident_interner();
@@ -961,6 +961,7 @@ pub fn phase_3_run_analysis_passes<'tcx, F, R>(sess: &'tcx Session,
             let mut passes = sess.mir_passes.borrow_mut();
             // Push all the built-in passes.
             passes.push_hook(box mir::transform::dump_mir::DumpMir);
+            passes.push_hook(box mir::transform::mir_stats::MirStats);
             passes.push_pass(box mir::transform::simplify_cfg::SimplifyCfg::new("initial"));
             passes.push_pass(box mir::transform::qualify_consts::QualifyAndPromoteConstants);
             passes.push_pass(box mir::transform::type_check::TypeckMir);

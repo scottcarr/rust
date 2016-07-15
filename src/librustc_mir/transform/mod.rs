@@ -17,4 +17,8 @@ pub mod add_call_guards;
 pub mod promote_consts;
 pub mod qualify_consts;
 pub mod dump_mir;
+<<<<<<< HEAD
 pub mod move_up_propagation;
+=======
+pub mod mir_stats;
+>>>>>>> 2ebe5f3a32be611412962e697bdea5ab9810eb08

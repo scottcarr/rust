@@ -727,8 +727,6 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
         "load extra plugins"),
     unstable_options: bool = (false, parse_bool,
           "adds unstable command line options to rustc interface"),
-    print_enum_sizes: bool = (false, parse_bool,
-          "print the size of enums and their variants"),
     force_overflow_checks: Option<bool> = (None, parse_opt_bool,
           "force overflow checks on or off"),
     force_dropflag_checks: Option<bool> = (None, parse_opt_bool,
@@ -753,6 +751,8 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
           "the directory the MIR is dumped into"),
     orbit: bool = (false, parse_bool,
           "get MIR where it belongs - everywhere; most importantly, in orbit"),
+    print_mir_stats: bool = (false, parse_bool,
+          "print stats about the mir before and after each pass"),
 }
 
 pub fn default_lib_output() -> CrateType {
@@ -985,7 +985,7 @@ pub fn rustc_short_optgroups() -> Vec<RustcOptGroup> {
                              assumed.", "[KIND=]NAME"),
         opt::multi_s("", "crate-type", "Comma separated list of types of crates
                                     for the compiler to emit",
-                   "[bin|lib|rlib|dylib|staticlib]"),
+                   "[bin|lib|rlib|dylib|cdylib|staticlib]"),
         opt::opt_s("", "crate-name", "Specify the name of the crate being built",
                "NAME"),
         opt::multi_s("", "emit", "Comma separated list of types of output for \

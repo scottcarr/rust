@@ -84,7 +84,12 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
             }
 
             debug!("deleting the decl of: {:?}", tmp);
-            dead_temps.insert(tmp.index());
+
+            // FIXME SCOTT
+            // this is broken now because we're using Local index which
+            // index into imaginary land ...
+            //dead_temps.insert(tmp.index());
+
             opt_counter += 1;
         }
         cleanup_temps(mir, dead_temps);
@@ -94,12 +99,13 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
 
 fn cleanup_temps(mir: &mut Mir, dead_temps: BitVector) {
     let mut curr = 0;
-    let mut new_vals: IndexVec<Temp, Lvalue> = IndexVec::with_capacity(mir.temp_decls.len());
+    let mut new_vals: IndexVec<Temp, Temp> = IndexVec::with_capacity(mir.temp_decls.len());
     for i in 0..mir.temp_decls.len() {
         if dead_temps.contains(i) {
-            new_vals.push(Lvalue::Temp(Temp::new(0))); // we should never encounter these anyway
+            // if the value is dead, we don't have any mapping from old to new
+            new_vals.push(Temp::new(0)); // we should never encounter these anyway
         } else {
-            new_vals.push(Lvalue::Temp(Temp::new(curr)));
+            new_vals.push(Temp::new(curr));
             curr += 1;
         }
     }
@@ -114,15 +120,15 @@ fn cleanup_temps(mir: &mut Mir, dead_temps: BitVector) {
     mir.temp_decls = new_decls;
 }
 
-struct TempRewriter<'a> {
-    new_vals: IndexVec<Temp, Lvalue<'a>>,
+struct TempRewriter {
+    new_vals: IndexVec<Temp, Temp>,
 }
 
-impl<'a> MutVisitor<'a> for TempRewriter<'a> {
+impl<'a> MutVisitor<'a> for TempRewriter {
     fn visit_lvalue(&mut self, lvalue: &mut Lvalue<'a>, context: LvalueContext) {
         match lvalue {
             &mut Lvalue::Temp(idx) => {
-                *lvalue = self.new_vals[idx].clone();
+                *lvalue = Lvalue::Temp(self.new_vals[idx]);
             }
             _ => {}
         }
@@ -262,12 +268,13 @@ impl DefUseLists {
 }
 
 struct TempDefUseFinder<'a> {
-    pub lists: HashMap<Lvalue<'a>, DefUseLists>,
+    pub lists: IndexVec<Local, DefUseLists>,
     pub is_borrowed: HashSet<Lvalue<'a>>,
     curr_basic_block: BasicBlock,
     statement_index: usize,
     kind: AccessKind,
     is_in_terminator: bool,
+    mir: &'a Mir<'a>,
 }
 
 enum AccessKind {
@@ -280,7 +287,7 @@ enum GetOneErr {
     NotOne,
 }
 
-fn get_one_optimization(mir: &Mir) -> Option<(Temp, BasicBlock, usize, BasicBlock, usize)> {
+fn get_one_optimization<'a>(mir: &Mir<'a>) -> Option<(Local, BasicBlock, usize, BasicBlock, usize)> {
     let tduf = TempDefUseFinder::new(mir);
     if let Some(&temp) = tduf.get_temps_that_satisfy(mir).first() {
         if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(temp) {
@@ -293,14 +300,15 @@ fn get_one_optimization(mir: &Mir) -> Option<(Temp, BasicBlock, usize, BasicBloc
 }
 
 impl<'a> TempDefUseFinder<'a> {
-    fn new(mir: &Mir<'a>) -> Self {
+    fn new(mir: &'a Mir<'a>) -> Self {
         let mut tuc = TempDefUseFinder {
-            lists: HashMap::new(),
+            lists: IndexVec::with_capacity(mir.arg_decls.len() + mir.temp_decls.len() + mir.var_decls.len()),
             is_borrowed: HashSet::new(),
             curr_basic_block: START_BLOCK,
             statement_index: 0,
             kind: AccessKind::Def, // will get updated when we see an assign
             is_in_terminator: false,
+            mir: mir,
         };
         tuc.visit_mir(mir);
         tuc
@@ -315,22 +323,29 @@ impl<'a> TempDefUseFinder<'a> {
             basic_block: self.curr_basic_block,
             inner_location: loc,
         };
+        let idx = self.mir.local_index(lvalue).unwrap();
         match self.kind {
-            AccessKind::Def => self.lists.entry(lvalue.clone())
-                                        .or_insert(DefUseLists::new())
-                                        .defs
-                                        .push(ent),
-            AccessKind::Use => self.lists.entry(lvalue.clone())
-                                        .or_insert(DefUseLists::new())
-                                        .uses
-                                        .push(ent),
+            // AccessKind::Def => self.lists.entry(lvalue.clone())
+            //                             .or_insert(DefUseLists::new())
+            //                             .defs
+            //                             .push(ent),
+            // AccessKind::Use => self.lists.entry(lvalue.clone())
+            //                             .or_insert(DefUseLists::new())
+            //                             .uses
+            //                             .push(ent),
+            AccessKind::Def => {
+                self.lists[idx].defs.push(ent)
+            }
+            AccessKind::Use => {
+                self.lists[idx].uses.push(ent)
+            }
         };
     }
-    fn get_one_use_as_idx(&self, temp: Temp) -> Result<(BasicBlock, usize), GetOneErr> {
-        if self.lists[&Lvalue::Temp(temp)].uses.len() != 1 {
+    fn get_one_use_as_idx(&self, temp: Local) -> Result<(BasicBlock, usize), GetOneErr> {
+        if self.lists[temp].uses.len() != 1 {
             return Err(GetOneErr::NotOne);
         };
-        let use_loc = self.lists[&Lvalue::Temp(temp)].uses.first().unwrap();
+        let use_loc = self.lists[temp].uses.first().unwrap();
         let use_bb = use_loc.basic_block;
         let use_idx = match use_loc.inner_location {
             InnerLocation::StatementIndex(idx) => idx,
@@ -338,11 +353,11 @@ impl<'a> TempDefUseFinder<'a> {
         };
         Ok((use_bb, use_idx))
     }
-    fn get_one_def_as_idx(&self, temp: Temp) -> Result<(BasicBlock, usize), GetOneErr> {
-        if self.lists[&Lvalue::Temp(temp)].defs.len() != 1 {
+    fn get_one_def_as_idx(&self, temp: Local) -> Result<(BasicBlock, usize), GetOneErr> {
+        if self.lists[temp].defs.len() != 1 {
             return Err(GetOneErr::NotOne);
         };
-        let def_loc = self.lists[&Lvalue::Temp(temp)].defs.first().unwrap();
+        let def_loc = self.lists[temp].defs.first().unwrap();
         let def_bb = def_loc.basic_block;
         let def_idx = match def_loc.inner_location {
             InnerLocation::StatementIndex(idx) => idx,
@@ -350,21 +365,23 @@ impl<'a> TempDefUseFinder<'a> {
         };
         Ok((def_bb, def_idx))
     }
-    fn get_temps_that_satisfy(&self, mir: &Mir<'a>) -> Vec<Temp> {
-        self.lists.iter().filter(|&(lval, lists)| {
-            if let &Lvalue::Temp(_) = lval {
-                lists.uses.len() == 1 && lists.defs.len() == 1
-            } else {
-                false
-            }
-        }).map(|(lval, _)| {
-            debug!("{:?} has 1 def and 1 use", lval);
-            if let &Lvalue::Temp(tmp) = lval {
-                (lval, tmp)
-            } else {
-                panic!("we already checked that it was a temp");
-            }
-        }).filter(|&(lval, tmp)| {
+    fn get_temps_that_satisfy(&self, mir: &Mir<'a>) -> Vec<Local> {
+        self.lists.iter_enumerated().filter(|&(_,lists)| {
+            // if let &Lvalue::Temp(_) = lval {
+            //     lists.uses.len() == 1 && lists.defs.len() == 1
+            // } else {
+            //     false
+            // }
+            lists.uses.len() == 1 && lists.defs.len() == 1
+        }).map(|(tmp, _)| {
+            debug!("{:?} has 1 def and 1 use", tmp);
+            // if let &Lvalue::Temp(tmp) = lval {
+            //     (lval, tmp)
+            // } else {
+            //     panic!("we already checked that it was a temp");
+            // }
+            tmp
+        }).filter(|&tmp| {
             if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(tmp) {
                 // this checks the constraint: DEST is not borrowed (currently: not borrowed ever)
                 let StatementKind::Assign(ref dest, ref rhs) = mir.basic_blocks()[use_bb]
@@ -374,8 +391,12 @@ impl<'a> TempDefUseFinder<'a> {
                 // we can only really replace DEST = tmp
                 // not more complex expressions
                 if let &Rvalue::Use(Operand::Consume(ref use_lval)) = rhs {
-                    if use_lval != lval {
-                        return false; // we should never get here anyway
+                    if let Some(use_idx) = mir.local_index(use_lval) {
+                        if use_idx != tmp {
+                            return false; // we should never get here anyway
+                        }
+                    } else {
+                        panic!("it should have a local index");
                     }
                 } else {
                     return false;
@@ -388,7 +409,7 @@ impl<'a> TempDefUseFinder<'a> {
             } else {
                 false
             }
-        }).filter(|&(_, tmp)| {
+        }).filter(|&tmp| {
             // 1) check all paths starting from Def(tmp = ...) to Use(DEST = tmp)
             //    * do not intermediately use DEST
             //    * and do not contain calls
@@ -415,7 +436,7 @@ impl<'a> TempDefUseFinder<'a> {
                 }
             }
             false
-        }).map(|(_, tmp)| {
+        }).map(|tmp| {
             tmp
         }).collect()
     }

@@ -378,13 +378,13 @@ impl<'a> TempDefUseFinder<'a> {
         Ok((def_bb, def_idx))
     }
     fn get_temps_that_satisfy(&self, mir: &Mir<'a>) -> Vec<Local> {
-        self.lists.iter_enumerated().filter(|&(_,lists)| {
+        self.lists.iter_enumerated().filter(|&(local,lists)| {
             // if let &Lvalue::Temp(_) = lval {
             //     lists.uses.len() == 1 && lists.defs.len() == 1
             // } else {
             //     false
             // }
-            lists.uses.len() == 1 && lists.defs.len() == 1
+            lists.uses.len() == 1 && lists.defs.len() == 1 && mir.local_index(&Lvalue::ReturnPointer).unwrap() != local
         }).map(|(tmp, _)| {
             debug!("{:?} has 1 def and 1 use", tmp);
             // if let &Lvalue::Temp(tmp) = lval {

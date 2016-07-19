@@ -12,7 +12,7 @@ use rustc::ty::TyCtxt;
 use rustc::mir::repr::*;
 use rustc::mir::transform::{MirPass, MirSource, Pass};
 use rustc::mir::visit::{Visitor, LvalueContext, MutVisitor};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use rustc_data_structures::tuple_slice::TupleSlice;
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
@@ -40,7 +40,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         debug!("move-up-propagation on {:?}", node_path);
 
         let mut opt_counter = 0;
-        let mut dead_temps = BitVector::new(mir.temp_decls.len());
+        let dead_temps = BitVector::new(mir.temp_decls.len());
         while let Some((tmp, use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
             let new_statement_kind = get_replacement_statement(mir,
                                                                use_bb,

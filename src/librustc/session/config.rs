@@ -751,6 +751,8 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
           "the directory the MIR is dumped into"),
     orbit: bool = (false, parse_bool,
           "get MIR where it belongs - everywhere; most importantly, in orbit"),
+    print_mir_stats: bool = (false, parse_bool,
+          "print stats about the mir before and after each pass"),
 }
 
 pub fn default_lib_output() -> CrateType {

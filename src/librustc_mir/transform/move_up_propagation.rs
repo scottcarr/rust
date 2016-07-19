@@ -253,6 +253,7 @@ impl<'a> Visitor<'a> for UseOnPathFinder<'a> {
     }
 }
 
+#[derive(Clone)]
 struct DefUseLists {
     pub defs: Vec<UseDefLocation>,
     pub uses: Vec<UseDefLocation>,
@@ -287,7 +288,8 @@ enum GetOneErr {
     NotOne,
 }
 
-fn get_one_optimization<'a>(mir: &Mir<'a>) -> Option<(Local, BasicBlock, usize, BasicBlock, usize)> {
+fn get_one_optimization<'a>(mir: &Mir<'a>)
+                            -> Option<(Local, BasicBlock, usize, BasicBlock, usize)> {
     let tduf = TempDefUseFinder::new(mir);
     if let Some(&temp) = tduf.get_temps_that_satisfy(mir).first() {
         if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(temp) {
@@ -301,8 +303,9 @@ fn get_one_optimization<'a>(mir: &Mir<'a>) -> Option<(Local, BasicBlock, usize, 
 
 impl<'a> TempDefUseFinder<'a> {
     fn new(mir: &'a Mir<'a>) -> Self {
+        let local_vars_len = mir.arg_decls.len() + mir.temp_decls.len() + mir.var_decls.len();
         let mut tuc = TempDefUseFinder {
-            lists: IndexVec::with_capacity(mir.arg_decls.len() + mir.temp_decls.len() + mir.var_decls.len()),
+            lists: IndexVec::from_elem_n(DefUseLists::new(), local_vars_len),
             is_borrowed: HashSet::new(),
             curr_basic_block: START_BLOCK,
             statement_index: 0,
@@ -323,24 +326,33 @@ impl<'a> TempDefUseFinder<'a> {
             basic_block: self.curr_basic_block,
             inner_location: loc,
         };
-        let idx = self.mir.local_index(lvalue).unwrap();
-        match self.kind {
-            // AccessKind::Def => self.lists.entry(lvalue.clone())
-            //                             .or_insert(DefUseLists::new())
-            //                             .defs
-            //                             .push(ent),
-            // AccessKind::Use => self.lists.entry(lvalue.clone())
-            //                             .or_insert(DefUseLists::new())
-            //                             .uses
-            //                             .push(ent),
-            AccessKind::Def => {
-                self.lists[idx].defs.push(ent)
+        // we need to check if lvalue is actually a local
+        match lvalue {
+            &Lvalue::Temp(_) |
+            &Lvalue::Arg(_) |
+            &Lvalue::Var(_) => {
+                let idx = self.mir.local_index(lvalue).unwrap();
+                match self.kind {
+                    // AccessKind::Def => self.lists.entry(lvalue.clone())
+                    //                             .or_insert(DefUseLists::new())
+                    //                             .defs
+                    //                             .push(ent),
+                    // AccessKind::Use => self.lists.entry(lvalue.clone())
+                    //                             .or_insert(DefUseLists::new())
+                    //                             .uses
+                    //                             .push(ent),
+                    AccessKind::Def => {
+                        self.lists[idx].defs.push(ent)
+                    }
+                    AccessKind::Use => {
+                        self.lists[idx].uses.push(ent)
+                    }
+                };
             }
-            AccessKind::Use => {
-                self.lists[idx].uses.push(ent)
-            }
-        };
+            _ => {}
+        }
     }
+
     fn get_one_use_as_idx(&self, temp: Local) -> Result<(BasicBlock, usize), GetOneErr> {
         if self.lists[temp].uses.len() != 1 {
             return Err(GetOneErr::NotOne);
@@ -390,14 +402,14 @@ impl<'a> TempDefUseFinder<'a> {
 
                 // we can only really replace DEST = tmp
                 // not more complex expressions
-                if let &Rvalue::Use(Operand::Consume(ref use_lval)) = rhs {
-                    if let Some(use_idx) = mir.local_index(use_lval) {
-                        if use_idx != tmp {
-                            return false; // we should never get here anyway
-                        }
-                    } else {
-                        panic!("it should have a local index");
-                    }
+                if let &Rvalue::Use(Operand::Consume(_)) = rhs {
+                    // if let Some(use_idx) = mir.local_index(use_lval) {
+                    //     if use_idx != tmp {
+                    //         return false; // we should never get here anyway
+                    //     }
+                    // } else {
+                    //     panic!("it should have a local index");
+                    // }
                 } else {
                     return false;
                 }

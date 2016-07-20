@@ -26,6 +26,7 @@ use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 // on path p, tmp0 cannot be read or borrowed, borrowing x counts as a read
 // we consider all calls to potentially read x
 
+
 pub struct MoveUpPropagation;
 
 impl Pass for MoveUpPropagation {}
@@ -83,8 +84,6 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     !dead
                 });
             }
-
-            // TODO also delete var_decls?
 
             // tmp is really a local index (an index into an imaginary vector...)
             // so we need to convert it back to a Temp
@@ -210,25 +209,6 @@ fn get_replacement_statement<'a>(mir: &Mir<'a>,
     StatementKind::Assign(use_lval.clone(), def_rval.clone())
 }
 
-fn paths_satisfy_our_condition<'a>(dest: &Lvalue<'a>,
-                                   end_statement: &Statement<'a>,
-                                   end_block: BasicBlock,
-                                   start_block: BasicBlock,
-                                   start_index: usize,
-                                   start_block_data: &BasicBlockData<'a>)
-                                   -> bool {
-    let mut upf = UseOnPathFinder {
-        dest: dest,
-        end_statement: end_statement,
-        end_block: end_block,
-        found_intermediate_use_of_dest: false,
-        found_call: false,
-        found_end_statement: false,
-    };
-    upf.visit_first_block(start_block, start_block_data, start_index);
-    upf.found_end_statement && !upf.found_intermediate_use_of_dest && !upf.found_call
-}
-
 struct UseOnPathFinder<'a> {
     dest: &'a Lvalue<'a>,
     end_statement: &'a Statement<'a>,
@@ -317,22 +297,17 @@ enum AccessKind {
     Use,
 }
 
-enum GetOneErr {
-    NotAStatement,
-    NotOne,
-}
-
 fn get_one_optimization<'a>(mir: &Mir<'a>)
                             -> Option<(Local, BasicBlock, usize, BasicBlock, usize)> {
     let tduf = TempDefUseFinder::new(mir);
-    if let Some(&temp) = tduf.get_temps_that_satisfy(mir).first() {
-        if let Ok((use_bb, use_idx)) = tduf.get_one_use_as_idx(temp) {
-            if let Ok((def_bb, def_idx)) = tduf.get_one_def_as_idx(temp) {
-                return Some((temp, use_bb, use_idx, def_bb, def_idx));
-            }
-        }
+    match tduf.get_temp_that_satisfies(mir) {
+        Some(local) => {
+            let (def_bb, def_idx) = tduf.get_one_def_as_idx(local).unwrap();
+            let (use_bb, use_idx) = tduf.get_one_use_as_idx(local).unwrap();
+            Some((local, use_bb, use_idx, def_bb, def_idx))
+        },
+        _ => None
     }
-    None
 }
 
 impl<'a> TempDefUseFinder<'a> {
@@ -379,86 +354,126 @@ impl<'a> TempDefUseFinder<'a> {
         }
     }
 
-    fn get_one_use_as_idx(&self, temp: Local) -> Result<(BasicBlock, usize), GetOneErr> {
+    fn get_one_use_as_idx(&self, temp: Local) -> Option<(BasicBlock, usize)> {
         if self.lists[temp].uses.len() != 1 {
-            return Err(GetOneErr::NotOne);
+            return None;
         };
         let use_loc = self.lists[temp].uses.first().unwrap();
         let use_bb = use_loc.basic_block;
         let use_idx = match use_loc.inner_location {
             InnerLocation::StatementIndex(idx) => idx,
-            _ => return Err(GetOneErr::NotAStatement),
+            _ => { return None; },
         };
-        Ok((use_bb, use_idx))
+        Some((use_bb, use_idx))
     }
-    fn get_one_def_as_idx(&self, temp: Local) -> Result<(BasicBlock, usize), GetOneErr> {
+    fn get_one_def_as_idx(&self, temp: Local) -> Option<(BasicBlock, usize)> {
         if self.lists[temp].defs.len() != 1 {
-            return Err(GetOneErr::NotOne);
+            return None;
         };
         let def_loc = self.lists[temp].defs.first().unwrap();
         let def_bb = def_loc.basic_block;
         let def_idx = match def_loc.inner_location {
             InnerLocation::StatementIndex(idx) => idx,
-            _ => return Err(GetOneErr::NotAStatement),
+            _ => { return None; },
         };
-        Ok((def_bb, def_idx))
+        Some((def_bb, def_idx))
     }
-    fn get_temps_that_satisfy(&self, mir: &Mir<'a>) -> Vec<Local> {
-        self.lists.iter_enumerated().filter(|&(local,lists)| {
-            // we want to replace local variables with one def and one use and that are not the return pointer
-        lists.uses.len() == 1 && 
-                            lists.defs.len() == 1 && 
-                            mir.local_index(&Lvalue::ReturnPointer).unwrap() != local
-        }).filter(|&(tmp, _)| {
-            if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(tmp) {
-                // this checks the constraint: DEST is not borrowed (currently: not borrowed ever)
-                let StatementKind::Assign(ref dest, ref rhs) = mir.basic_blocks()[use_bb]
-                                                            .statements[use_idx]
-                                                            .kind;
-                if self.is_borrowed.contains(&dest) {
-                    debug!("dest was borrowed: {:?}!", dest);
-                    return false;
-                }
-                // we can only really replace DEST = tmp
-                // not more complex expressions
-                if let &Rvalue::Use(Operand::Consume(ref use_rval)) = rhs {
-                    if let Some(_) = mir.local_index(use_rval) {
-                        return true;
-                    }
-                }
-            } 
-            return false;
-        }).filter(|&(tmp, _)| {
-            // 1) check all paths starting from Def(tmp = ...) to Use(DEST = tmp)
-            //    * do not intermediately use DEST
-            //    * and do not contain calls
-            // 2) check all paths starting from Def(tmp = ...) to "exit"
-            //    * either go through Use(DEST = tmp) or don't use DEST
-            //    ** calls count as uses
-            // 3) check that the address of DEST cannot change
-            //    * currently, check that DEST is a plain (stack-allocated?) lvalue
-            //      (not a projection)
-            if let Ok((end_block, use_idx)) = self.get_one_use_as_idx(tmp) {
-                if let Ok((start_block, def_idx)) = self.get_one_def_as_idx(tmp) {
-                    let ref end_statement = mir.basic_blocks()[end_block].statements[use_idx];
-                    let StatementKind::Assign(ref dest, _) = end_statement.kind;
-                    if let &Lvalue::Projection(_) = dest {
-                        return false;  // we don't replace projections for now
-                    }
-                    let ref start_block_data = mir.basic_blocks()[start_block];
-                    return paths_satisfy_our_condition(dest,
-                                                       end_statement,
-                                                       end_block,
-                                                       start_block,
-                                                       def_idx,
-                                                       start_block_data);
-                }
+    // fn get_one_def_one_use(&self, local: Local, mir: &Mir<'a>) -> Option<(BasicBlock, usize, BasicBlock, usize)> {
+    //     // we want to replace local variables with one def and one use and that are not the return pointer
+    //     if let Ok((def_bb, def_idx)) = self.get_one_def_as_idx(local) {
+    //         if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(local) {
+    //             return Some((def_bb, def_idx, use_bb, use_idx));
+    //         }
+    //     }
+    //     return None;
+    // }
+    fn has_complicated_rhs(&self, use_bb: BasicBlock, use_idx: usize, mir: &Mir<'a>) -> bool {
+        let StatementKind::Assign(_, ref rhs) = mir.basic_blocks()[use_bb]
+                                                    .statements[use_idx]
+                                                    .kind;
+        // we can only really replace DEST = tmp
+        // not more complex expressions
+        if let &Rvalue::Use(Operand::Consume(ref use_rval)) = rhs {
+            if let Some(_) = mir.local_index(use_rval) {
+                return false;
             }
-            false
-        }).map(|(tmp, _)| { tmp })
-        .collect()
+        }
+        return true;
     }
+    fn is_dest_borrowed(&self, use_bb: BasicBlock, use_idx: usize, mir: &Mir<'a>) -> bool {
+        // this checks the constraint: DEST is not borrowed (currently: not borrowed ever)
+        let StatementKind::Assign(ref dest, _) = mir.basic_blocks()[use_bb]
+                                                    .statements[use_idx]
+                                                    .kind;
+        self.is_borrowed.contains(&dest)
+    }
+    fn paths_satisfy(&self, end_block: BasicBlock, use_idx: usize, start_block: BasicBlock, def_idx: usize, mir: &Mir<'a>) -> bool {
+        // 1) check all paths starting from Def(tmp = ...) to Use(DEST = tmp)
+        //    * do not intermediately use DEST
+        //    * and do not contain calls
+        // 2) check all paths starting from Def(tmp = ...) to "exit"
+        //    * either go through Use(DEST = tmp) or don't use DEST
+        //    ** calls count as uses
+        // 3) check that the address of DEST cannot change
+        //    * currently, check that DEST is a plain (stack-allocated?) lvalue
+        //      (not a projection)
+        let ref end_statement = mir.basic_blocks()[end_block].statements[use_idx];
+        let StatementKind::Assign(ref dest, _) = end_statement.kind;
+        if let &Lvalue::Projection(_) = dest {
+            return false;  // we don't replace projections for now
+        }
+        let ref start_block_data = mir.basic_blocks()[start_block];
+        let mut upf = UseOnPathFinder {
+            dest: dest,
+            end_statement: end_statement,
+            end_block: end_block,
+            found_intermediate_use_of_dest: false,
+            found_call: false,
+            found_end_statement: false,
+        };
+        upf.visit_first_block(start_block, start_block_data, def_idx);
+        upf.found_end_statement && !upf.found_intermediate_use_of_dest && !upf.found_call
+    }
+    fn get_temp_that_satisfies(&self, mir: &Mir<'a>) -> Option<Local> {
+        let result = self.lists.iter_enumerated().find(|&(local,_)| {
+            if mir.local_index(&Lvalue::ReturnPointer).unwrap() == local {
+                debug!("local was return pointer!");
+                return false;
+            }
+            let (use_bb, use_idx) = match self.get_one_use_as_idx(local) {
+                Some(x) => x,
+                None => {
+                    debug!("local did not have one use!"); 
+                    return false; 
+                }
+            };
+            let (def_bb, def_idx) = match self.get_one_def_as_idx(local) {
+                Some(x) => x,
+                None => {
+                    debug!("local did not have one def!"); 
+                    return false; 
+                }
+            };
+            if self.is_dest_borrowed(use_bb, use_idx, mir) {
+                debug!("dest was borrowed!"); 
+                return false;
+            }
+            if self.has_complicated_rhs(use_bb, use_idx, mir) {
+                debug!("dest was borrowed!"); 
+                return false;
+            }
+            if !self.paths_satisfy(use_bb, use_idx, def_bb, def_idx, mir) {
+                return false;
+            }
+            return true;
+        });
+        match result {
+            Some((local, _)) => Some(local),
+            _ => None,
+        }
+    } 
 }
+
 impl<'a> Visitor<'a> for TempDefUseFinder<'a> {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'a>) {
         self.curr_basic_block = block;

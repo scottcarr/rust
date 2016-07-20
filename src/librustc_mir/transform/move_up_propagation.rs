@@ -40,7 +40,8 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
         debug!("move-up-propagation on {:?}", node_path);
 
         let mut opt_counter = 0;
-        let dead_temps = BitVector::new(mir.temp_decls.len());
+        let mut dead_temps = BitVector::new(mir.temp_decls.len());
+        let mut dead_vars = BitVector::new(mir.var_decls.len());
         while let Some((tmp, use_bb, use_idx, def_bb, def_idx)) = get_one_optimization(mir) {
             let new_statement_kind = get_replacement_statement(mir,
                                                                use_bb,
@@ -83,16 +84,24 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                 });
             }
 
-            debug!("deleting the decl of: {:?}", tmp);
+            // TODO also delete var_decls?
 
-            // FIXME SCOTT
-            // this is broken now because we're using Local index which
-            // index into imaginary land ...
-            //dead_temps.insert(tmp.index());
+            // tmp is really a local index (an index into an imaginary vector...)
+            // so we need to convert it back to a Temp
+            if let Some(idx) = mir.from_local_index_to_temp(tmp) {
+                debug!("deleting the decl of: {:?}", idx);
+                dead_temps.insert(idx.index());
+            }
+            if let Some(idx) = mir.from_local_index_to_var(tmp) {
+                debug!("deleting the decl of: {:?}", idx);
+                dead_vars.insert(idx.index());
+            }
+
 
             opt_counter += 1;
         }
         cleanup_temps(mir, dead_temps);
+        cleanup_vars(mir, dead_vars);
         debug!("we did {:?} optimizations", opt_counter);
     }
 }
@@ -136,25 +145,50 @@ impl<'a> MutVisitor<'a> for TempRewriter {
     }
 }
 
+fn cleanup_vars(mir: &mut Mir, dead_vars: BitVector) {
+    let mut curr = 0;
+    let mut new_vals: IndexVec<Var, Var> = IndexVec::with_capacity(mir.var_decls.len());
+    for i in 0..mir.var_decls.len() {
+        if dead_vars.contains(i) {
+            // if the value is dead, we don't have any mapping from old to new
+            new_vals.push(Var::new(0)); // we should never encounter these anyway
+        } else {
+            new_vals.push(Var::new(curr));
+            curr += 1;
+        }
+    }
+    let mut tr = VarRewriter { new_vals: new_vals };
+    tr.visit_mir(mir);
+    let mut new_decls = IndexVec::new();
+    for (idx, e) in mir.var_decls.iter_enumerated() {
+        if !dead_vars.contains(idx.index()) {
+            new_decls.push(e.clone());
+        }
+    }
+    mir.var_decls = new_decls;
+}
+
+struct VarRewriter {
+    new_vals: IndexVec<Var, Var>,
+}
+
+impl<'a> MutVisitor<'a> for VarRewriter {
+    fn visit_lvalue(&mut self, lvalue: &mut Lvalue<'a>, context: LvalueContext) {
+        match lvalue {
+            &mut Lvalue::Var(idx) => {
+                *lvalue = Lvalue::Var(self.new_vals[idx]);
+            }
+            _ => {}
+        }
+        self.super_lvalue(lvalue, context);
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 struct UseDefLocation {
     basic_block: BasicBlock,
     inner_location: InnerLocation,
 }
-
-// impl UseDefLocation {
-//     fn print(&self, mir: &Mir) {
-//         let ref bb = mir[self.basic_block];
-//         match self.inner_location {
-//             InnerLocation::StatementIndex(idx) => {
-//                 debug!("{:?}", bb.statements[idx]);
-//             },
-//             InnerLocation::Terminator => {
-//                 debug!("{:?}", bb.terminator);
-//             }
-//         }
-//     }
-// }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 enum InnerLocation {
@@ -326,21 +360,13 @@ impl<'a> TempDefUseFinder<'a> {
             basic_block: self.curr_basic_block,
             inner_location: loc,
         };
-        // we need to check if lvalue is actually a local
+        // check if lvalue is actually a local
         match lvalue {
-            &Lvalue::Temp(_) |
+            &Lvalue::Var(_) |
             &Lvalue::Arg(_) |
-            &Lvalue::Var(_) => {
+            &Lvalue::Temp(_) => {
                 let idx = self.mir.local_index(lvalue).unwrap();
                 match self.kind {
-                    // AccessKind::Def => self.lists.entry(lvalue.clone())
-                    //                             .or_insert(DefUseLists::new())
-                    //                             .defs
-                    //                             .push(ent),
-                    // AccessKind::Use => self.lists.entry(lvalue.clone())
-                    //                             .or_insert(DefUseLists::new())
-                    //                             .uses
-                    //                             .push(ent),
                     AccessKind::Def => {
                         self.lists[idx].defs.push(ent)
                     }
@@ -379,49 +405,30 @@ impl<'a> TempDefUseFinder<'a> {
     }
     fn get_temps_that_satisfy(&self, mir: &Mir<'a>) -> Vec<Local> {
         self.lists.iter_enumerated().filter(|&(local,lists)| {
-            // if let &Lvalue::Temp(_) = lval {
-            //     lists.uses.len() == 1 && lists.defs.len() == 1
-            // } else {
-            //     false
-            // }
-            lists.uses.len() == 1 && lists.defs.len() == 1 && mir.local_index(&Lvalue::ReturnPointer).unwrap() != local
-        }).map(|(tmp, _)| {
-            debug!("{:?} has 1 def and 1 use", tmp);
-            // if let &Lvalue::Temp(tmp) = lval {
-            //     (lval, tmp)
-            // } else {
-            //     panic!("we already checked that it was a temp");
-            // }
-            tmp
-        }).filter(|&tmp| {
+            // we want to replace local variables with one def and one use and that are not the return pointer
+        lists.uses.len() == 1 && 
+                            lists.defs.len() == 1 && 
+                            mir.local_index(&Lvalue::ReturnPointer).unwrap() != local
+        }).filter(|&(tmp, _)| {
             if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(tmp) {
                 // this checks the constraint: DEST is not borrowed (currently: not borrowed ever)
                 let StatementKind::Assign(ref dest, ref rhs) = mir.basic_blocks()[use_bb]
                                                             .statements[use_idx]
                                                             .kind;
-
-                // we can only really replace DEST = tmp
-                // not more complex expressions
-                if let &Rvalue::Use(Operand::Consume(_)) = rhs {
-                    // if let Some(use_idx) = mir.local_index(use_lval) {
-                    //     if use_idx != tmp {
-                    //         return false; // we should never get here anyway
-                    //     }
-                    // } else {
-                    //     panic!("it should have a local index");
-                    // }
-                } else {
-                    return false;
-                }
                 if self.is_borrowed.contains(&dest) {
                     debug!("dest was borrowed: {:?}!", dest);
                     return false;
                 }
-                true
-            } else {
-                false
-            }
-        }).filter(|&tmp| {
+                // we can only really replace DEST = tmp
+                // not more complex expressions
+                if let &Rvalue::Use(Operand::Consume(ref use_rval)) = rhs {
+                    if let Some(_) = mir.local_index(use_rval) {
+                        return true;
+                    }
+                }
+            } 
+            return false;
+        }).filter(|&(tmp, _)| {
             // 1) check all paths starting from Def(tmp = ...) to Use(DEST = tmp)
             //    * do not intermediately use DEST
             //    * and do not contain calls
@@ -448,27 +455,9 @@ impl<'a> TempDefUseFinder<'a> {
                 }
             }
             false
-        }).map(|tmp| {
-            tmp
-        }).collect()
+        }).map(|(tmp, _)| { tmp })
+        .collect()
     }
-    // fn print(&self, mir: &Mir) {
-    //     for (k, ref v) in self.lists.iter() {
-    //         debug!("{:?} uses:", k);
-    //         debug!("{:?}", v.uses);
-    //         // this assertion was wrong
-    //         // you can have an unused temporary, ex: the result of a call is never used
-    //         //assert!(v.uses.len() > 0); // every temp should have at least one use
-    //         v.uses.iter().map(|e| UseDefLocation::print(&e, mir)).count();
-    //     }
-    //     for (k, ref v) in self.lists.iter() {
-    //         debug!("{:?} defs:", k);
-    //         debug!("{:?}", v.defs);
-    //         // this may be too strict? maybe the def was optimized out?
-    //         //assert!(v.defs.len() > 0); // every temp should have at least one def
-    //         v.defs.iter().map(|e| UseDefLocation::print(&e, mir)).count();
-    //     }
-    // }
 }
 impl<'a> Visitor<'a> for TempDefUseFinder<'a> {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'a>) {

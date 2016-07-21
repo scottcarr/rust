@@ -35,8 +35,13 @@ impl<'tcx> MirPassHook<'tcx> for MirStats {
             let num_stmts = mir.basic_blocks().iter().fold(0usize, |total, bb| {
                 total + bb.statements.len()
             });
-            println!("{}-{} on {}. num temps: {}. num basic_blocks: {}. num statements: {}.", 
-                   pass.name(), disambiguator, node_path, mir.temp_decls.len(), mir.basic_blocks().len(), num_stmts);
+            println!("{}-{} on {}. num temps: {}. num basic_blocks: {}. num statements: {}.",
+                     pass.name(),
+                     disambiguator,
+                     node_path,
+                     mir.temp_decls.len(),
+                     mir.basic_blocks().len(),
+                     num_stmts);
         }
     }
 }

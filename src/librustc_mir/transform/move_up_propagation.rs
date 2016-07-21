@@ -378,15 +378,7 @@ impl<'a> TempDefUseFinder<'a> {
         };
         Some((def_bb, def_idx))
     }
-    // fn get_one_def_one_use(&self, local: Local, mir: &Mir<'a>) -> Option<(BasicBlock, usize, BasicBlock, usize)> {
-    //     // we want to replace local variables with one def and one use and that are not the return pointer
-    //     if let Ok((def_bb, def_idx)) = self.get_one_def_as_idx(local) {
-    //         if let Ok((use_bb, use_idx)) = self.get_one_use_as_idx(local) {
-    //             return Some((def_bb, def_idx, use_bb, use_idx));
-    //         }
-    //     }
-    //     return None;
-    // }
+
     fn has_complicated_rhs(&self, use_bb: BasicBlock, use_idx: usize, mir: &Mir<'a>) -> bool {
         let StatementKind::Assign(_, ref rhs) = mir.basic_blocks()[use_bb]
                                                     .statements[use_idx]
@@ -407,7 +399,13 @@ impl<'a> TempDefUseFinder<'a> {
                                                     .kind;
         self.is_borrowed.contains(&dest)
     }
-    fn paths_satisfy(&self, end_block: BasicBlock, use_idx: usize, start_block: BasicBlock, def_idx: usize, mir: &Mir<'a>) -> bool {
+    fn paths_satisfy(&self,
+                     end_block: BasicBlock,
+                     use_idx: usize,
+                     start_block: BasicBlock,
+                     def_idx: usize,
+                     mir: &Mir<'a>)
+                     -> bool {
         // 1) check all paths starting from Def(tmp = ...) to Use(DEST = tmp)
         //    * do not intermediately use DEST
         //    * and do not contain calls
@@ -443,23 +441,23 @@ impl<'a> TempDefUseFinder<'a> {
             let (use_bb, use_idx) = match self.get_one_use_as_idx(local) {
                 Some(x) => x,
                 None => {
-                    debug!("local did not have one use!"); 
-                    return false; 
+                    debug!("local did not have one use!");
+                    return false;
                 }
             };
             let (def_bb, def_idx) = match self.get_one_def_as_idx(local) {
                 Some(x) => x,
                 None => {
-                    debug!("local did not have one def!"); 
-                    return false; 
+                    debug!("local did not have one def!");
+                    return false;
                 }
             };
             if self.is_dest_borrowed(use_bb, use_idx, mir) {
-                debug!("dest was borrowed!"); 
+                debug!("dest was borrowed!");
                 return false;
             }
             if self.has_complicated_rhs(use_bb, use_idx, mir) {
-                debug!("dest was borrowed!"); 
+                debug!("dest was borrowed!");
                 return false;
             }
             if !self.paths_satisfy(use_bb, use_idx, def_bb, def_idx, mir) {
@@ -471,7 +469,7 @@ impl<'a> TempDefUseFinder<'a> {
             Some((local, _)) => Some(local),
             _ => None,
         }
-    } 
+    }
 }
 
 impl<'a> Visitor<'a> for TempDefUseFinder<'a> {

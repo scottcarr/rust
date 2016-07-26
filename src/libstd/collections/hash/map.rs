@@ -1351,11 +1351,35 @@ pub enum Entry<'a, K: 'a, V: 'a> {
     ),
 }
 
+#[stable(feature= "debug_hash_map", since = "1.12.0")]
+impl<'a, K: 'a + Debug, V: 'a + Debug> Debug for Entry<'a, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Vacant(ref v) => f.debug_tuple("Entry")
+                              .field(v)
+                              .finish(),
+            Occupied(ref o) => f.debug_tuple("Entry")
+                                .field(o)
+                                .finish(),
+        }
+    }
+}
+
 /// A view into a single occupied location in a HashMap.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct OccupiedEntry<'a, K: 'a, V: 'a> {
     key: Option<K>,
     elem: FullBucket<K, V, &'a mut RawTable<K, V>>,
+}
+
+#[stable(feature= "debug_hash_map", since = "1.12.0")]
+impl<'a, K: 'a + Debug, V: 'a + Debug> Debug for OccupiedEntry<'a, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("OccupiedEntry")
+         .field("key", self.key())
+         .field("value", self.get())
+         .finish()
+    }
 }
 
 /// A view into a single empty location in a HashMap.
@@ -1364,6 +1388,15 @@ pub struct VacantEntry<'a, K: 'a, V: 'a> {
     hash: SafeHash,
     key: K,
     elem: VacantEntryState<K, V, &'a mut RawTable<K, V>>,
+}
+
+#[stable(feature= "debug_hash_map", since = "1.12.0")]
+impl<'a, K: 'a + Debug, V: 'a> Debug for VacantEntry<'a, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("VacantEntry")
+         .field(self.key())
+         .finish()
+    }
 }
 
 /// Possible states of a VacantEntry.
@@ -1666,6 +1699,17 @@ impl<'a, K, V, S> Extend<(&'a K, &'a V)> for HashMap<K, V, S>
 /// A particular instance `RandomState` will create the same instances of
 /// `Hasher`, but the hashers created by two different `RandomState`
 /// instances are unlikely to produce the same result for the same values.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use std::collections::hash_map::RandomState;
+///
+/// let s = RandomState::new();
+/// let mut map = HashMap::with_hasher(s);
+/// map.insert(1, 2);
+/// ```
 #[derive(Clone)]
 #[stable(feature = "hashmap_build_hasher", since = "1.7.0")]
 pub struct RandomState {
@@ -1675,6 +1719,14 @@ pub struct RandomState {
 
 impl RandomState {
     /// Constructs a new `RandomState` that is initialized with random keys.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::hash_map::RandomState;
+    ///
+    /// let s = RandomState::new();
+    /// ```
     #[inline]
     #[allow(deprecated)] // rand
     #[stable(feature = "hashmap_build_hasher", since = "1.7.0")]

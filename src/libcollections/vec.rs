@@ -342,11 +342,17 @@ impl<T> Vec<T> {
     ///
     /// * `ptr` needs to have been previously allocated via `String`/`Vec<T>`
     ///   (at least, it's highly likely to be incorrect if it wasn't).
-    /// * `length` needs to be the length that less than or equal to `capacity`.
+    /// * `length` needs to be less than or equal to `capacity`.
     /// * `capacity` needs to be the capacity that the pointer was allocated with.
     ///
     /// Violating these may cause problems like corrupting the allocator's
     /// internal datastructures.
+    ///
+    /// The ownership of `ptr` is effectively transferred to the
+    /// `Vec<T>` which may then deallocate, reallocate or change the
+    /// contents of memory pointed to by the pointer at will. Ensure
+    /// that nothing else uses the pointer after calling this
+    /// function.
     ///
     /// # Examples
     ///
@@ -479,18 +485,45 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Shorten a vector to be `len` elements long, dropping excess elements.
+    /// Shortens the vector, keeping the first `len` elements and dropping
+    /// the rest.
     ///
     /// If `len` is greater than the vector's current length, this has no
     /// effect.
     ///
+    /// The [`drain`] method can emulate `truncate`, but causes the excess
+    /// elements to be returned instead of dropped.
+    ///
     /// # Examples
+    ///
+    /// Truncating a five element vector to two elements:
     ///
     /// ```
     /// let mut vec = vec![1, 2, 3, 4, 5];
     /// vec.truncate(2);
     /// assert_eq!(vec, [1, 2]);
     /// ```
+    ///
+    /// No truncation occurs when `len` is greater than the vector's current
+    /// length:
+    ///
+    /// ```
+    /// let mut vec = vec![1, 2, 3];
+    /// vec.truncate(8);
+    /// assert_eq!(vec, [1, 2, 3]);
+    /// ```
+    ///
+    /// Truncating when `len == 0` is equivalent to calling the [`clear`]
+    /// method.
+    ///
+    /// ```
+    /// let mut vec = vec![1, 2, 3];
+    /// vec.truncate(0);
+    /// assert_eq!(vec, []);
+    /// ```
+    ///
+    /// [`clear`]: #method.clear
+    /// [`drain`]: #method.drain
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn truncate(&mut self, len: usize) {
         unsafe {
@@ -508,6 +541,14 @@ impl<T> Vec<T> {
     /// Extracts a slice containing the entire vector.
     ///
     /// Equivalent to `&s[..]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::io::{self, Write};
+    /// let buffer = vec![1, 2, 3, 5, 8];
+    /// io::sink().write(buffer.as_slice()).unwrap();
+    /// ```
     #[inline]
     #[stable(feature = "vec_as_slice", since = "1.7.0")]
     pub fn as_slice(&self) -> &[T] {
@@ -517,10 +558,18 @@ impl<T> Vec<T> {
     /// Extracts a mutable slice of the entire vector.
     ///
     /// Equivalent to `&mut s[..]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::io::{self, Read};
+    /// let mut buffer = vec![0; 3];
+    /// io::repeat(0b101).read_exact(buffer.as_mut_slice()).unwrap();
+    /// ```
     #[inline]
     #[stable(feature = "vec_as_slice", since = "1.7.0")]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self[..]
+        self
     }
 
     /// Sets the length of a vector.
@@ -532,9 +581,38 @@ impl<T> Vec<T> {
     /// # Examples
     ///
     /// ```
-    /// let mut v = vec![1, 2, 3, 4];
+    /// use std::ptr;
+    ///
+    /// let mut vec = vec!['r', 'u', 's', 't'];
+    ///
     /// unsafe {
-    ///     v.set_len(1);
+    ///     ptr::drop_in_place(&mut vec[3]);
+    ///     vec.set_len(3);
+    /// }
+    /// assert_eq!(vec, ['r', 'u', 's']);
+    /// ```
+    ///
+    /// In this example, there is a memory leak since the memory locations
+    /// owned by the inner vectors were not freed prior to the `set_len` call:
+    ///
+    /// ```
+    /// let mut vec = vec![vec![1, 0, 0],
+    ///                    vec![0, 1, 0],
+    ///                    vec![0, 0, 1]];
+    /// unsafe {
+    ///     vec.set_len(0);
+    /// }
+    /// ```
+    ///
+    /// In this example, the vector gets expanded from zero to four items
+    /// without any memory allocations occurring, resulting in vector
+    /// values of unallocated memory:
+    ///
+    /// ```
+    /// let mut vec: Vec<char> = Vec::new();
+    ///
+    /// unsafe {
+    ///     vec.set_len(4);
     /// }
     /// ```
     #[inline]
@@ -1603,6 +1681,12 @@ impl<'a, T> FromIterator<T> for Cow<'a, [T]> where T: Clone {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// An iterator that moves out of a vector.
+///
+/// This `struct` is created by the `into_iter` method on [`Vec`][`Vec`] (provided
+/// by the [`IntoIterator`] trait).
+///
+/// [`Vec`]: struct.Vec.html
+/// [`IntoIterator`]: ../../std/iter/trait.IntoIterator.html
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct IntoIter<T> {
     _buf: RawVec<T>,
@@ -1710,6 +1794,11 @@ impl<T> Drop for IntoIter<T> {
 }
 
 /// A draining iterator for `Vec<T>`.
+///
+/// This `struct` is created by the [`drain`] method on [`Vec`].
+///
+/// [`drain`]: struct.Vec.html#method.drain
+/// [`Vec`]: struct.Vec.html
 #[stable(feature = "drain", since = "1.6.0")]
 pub struct Drain<'a, T: 'a> {
     /// Index of tail to preserve

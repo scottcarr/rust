@@ -17,16 +17,6 @@ use rustc_data_structures::tuple_slice::TupleSlice;
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 
-// get rid of post-dominators and instead use the notion of "could not read x"
-// if we have Def tmp0 = ...
-// and Use x = tmp0
-// it is safe to apply the optimization if
-// for all paths that begin at Def and end at some exit
-// the path p goes through the Use, or the value of x is not read
-// on path p, tmp0 cannot be read or borrowed, borrowing x counts as a read
-// we consider all calls to potentially read x
-
-
 pub struct MoveUpPropagation;
 
 impl Pass for MoveUpPropagation {}
@@ -453,11 +443,12 @@ impl<'a> TempDefUseFinder<'a> {
                 }
             };
             if self.is_dest_borrowed(use_bb, use_idx, mir) {
-                debug!("dest was borrowed!");
+
+                debug!("DEST was borrowed!");
                 return false;
             }
             if self.has_complicated_rhs(use_bb, use_idx, mir) {
-                debug!("dest was borrowed!");
+                debug!("the rhs of DEST = rhs was complicated!");
                 return false;
             }
             if !self.paths_satisfy(use_bb, use_idx, def_bb, def_idx, mir) {

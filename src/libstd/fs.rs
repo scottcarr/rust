@@ -141,7 +141,7 @@ pub struct Permissions(fs_imp::FilePermissions);
 
 /// An structure representing a type of file with accessors for each file type.
 #[stable(feature = "file_type", since = "1.1.0")]
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FileType(fs_imp::FileType);
 
 /// A builder used to create directories in various manners.
@@ -791,8 +791,8 @@ impl Iterator for ReadDir {
 impl DirEntry {
     /// Returns the full path to the file that this entry represents.
     ///
-    /// The full path is created by joining the original path to `read_dir` or
-    /// `walk_dir` with the filename of this entry.
+    /// The full path is created by joining the original path to `read_dir`
+    /// with the filename of this entry.
     ///
     /// # Examples
     ///

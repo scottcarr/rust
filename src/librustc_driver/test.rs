@@ -33,8 +33,8 @@ use syntax::ast;
 use syntax::abi::Abi;
 use syntax::codemap::CodeMap;
 use errors;
-use errors::emitter::{CoreEmitter, Emitter};
-use errors::{Level, RenderSpan};
+use errors::emitter::Emitter;
+use errors::{Level, DiagnosticBuilder};
 use syntax::parse::token;
 use syntax::feature_gate::UnstableFeatures;
 use syntax_pos::DUMMY_SP;
@@ -76,15 +76,12 @@ fn remove_message(e: &mut ExpectErrorEmitter, msg: &str, lvl: Level) {
     }
 }
 
-impl CoreEmitter for ExpectErrorEmitter {
-    fn emit_message(&mut self,
-                    _sp: &RenderSpan,
-                    msg: &str,
-                    _: Option<&str>,
-                    lvl: Level,
-                    _is_header: bool,
-                    _show_snippet: bool) {
-        remove_message(self, msg, lvl);
+impl Emitter for ExpectErrorEmitter {
+    fn emit(&mut self, db: &DiagnosticBuilder) {
+        remove_message(self, &db.message, db.level);
+        for child in &db.children {
+            remove_message(self, &child.message, child.level);
+        }
     }
 }
 
@@ -106,7 +103,7 @@ fn test_env<F>(source_string: &str,
 
     let dep_graph = DepGraph::new(false);
     let _ignore = dep_graph.in_ignore();
-    let cstore = Rc::new(CStore::new(&dep_graph, token::get_ident_interner()));
+    let cstore = Rc::new(CStore::new(&dep_graph));
     let sess = session::build_session_(options, &dep_graph, None, diagnostic_handler,
                                        Rc::new(CodeMap::new()), cstore.clone());
     rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));

@@ -37,7 +37,6 @@ use rustc_resolve::MakeGlobMap;
 use syntax::codemap::CodeMap;
 use errors;
 use errors::emitter::ColorConfig;
-use syntax::parse::token;
 
 use core;
 use clean;
@@ -78,11 +77,11 @@ pub fn run(input: &str,
                                                                None,
                                                                true,
                                                                false,
-                                                               codemap.clone());
+                                                               Some(codemap.clone()));
 
     let dep_graph = DepGraph::new(false);
     let _ignore = dep_graph.in_ignore();
-    let cstore = Rc::new(CStore::new(&dep_graph, token::get_ident_interner()));
+    let cstore = Rc::new(CStore::new(&dep_graph));
     let sess = session::build_session_(sessopts,
                                        &dep_graph,
                                        Some(input_path.clone()),
@@ -230,7 +229,7 @@ fn runtest(test: &str, cratename: &str, cfgs: Vec<String>, libs: SearchPaths,
     let codemap = Rc::new(CodeMap::new());
     let emitter = errors::emitter::EmitterWriter::new(box Sink(data.clone()),
                                                 None,
-                                                codemap.clone(),
+                                                Some(codemap.clone()),
                                                 errors::snippet::FormatMode::EnvironmentSelected);
     let old = io::set_panic(box Sink(data.clone()));
     let _bomb = Bomb(data.clone(), old.unwrap_or(box io::stdout()));
@@ -239,7 +238,7 @@ fn runtest(test: &str, cratename: &str, cfgs: Vec<String>, libs: SearchPaths,
     let diagnostic_handler = errors::Handler::with_emitter(true, false, box emitter);
 
     let dep_graph = DepGraph::new(false);
-    let cstore = Rc::new(CStore::new(&dep_graph, token::get_ident_interner()));
+    let cstore = Rc::new(CStore::new(&dep_graph));
     let sess = session::build_session_(sessopts,
                                        &dep_graph,
                                        None,

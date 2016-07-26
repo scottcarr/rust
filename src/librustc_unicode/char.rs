@@ -39,6 +39,8 @@ pub use core::char::{MAX, from_digit, from_u32, from_u32_unchecked};
 pub use core::char::{EncodeUtf16, EncodeUtf8, EscapeDefault, EscapeUnicode};
 
 // unstable reexports
+#[unstable(feature = "decode_utf8", issue = "33906")]
+pub use core::char::{DecodeUtf8, decode_utf8};
 #[unstable(feature = "unicode", issue = "27783")]
 pub use tables::UNICODE_VERSION;
 
@@ -232,8 +234,8 @@ impl char {
     /// Returns an iterator that yields the hexadecimal Unicode escape of a
     /// character, as `char`s.
     ///
-    /// All characters are escaped with Rust syntax of the form `\\u{NNNN}`
-    /// where `NNNN` is the shortest hexadecimal representation.
+    /// All characters are escaped with Rust syntax of the form `\u{NNNNNN}`
+    /// where `NNNNNN` is the shortest hexadecimal representation.
     ///
     /// # Examples
     ///
@@ -390,7 +392,7 @@ impl char {
         C::len_utf16(self)
     }
 
-    /// Returns an interator over the bytes of this character as UTF-8.
+    /// Returns an iterator over the bytes of this character as UTF-8.
     ///
     /// The returned iterator also has an `as_slice()` method to view the
     /// encoded bytes as a byte slice.
@@ -413,7 +415,7 @@ impl char {
         C::encode_utf8(self)
     }
 
-    /// Returns an interator over the `u16` entries of this character as UTF-16.
+    /// Returns an iterator over the `u16` entries of this character as UTF-16.
     ///
     /// The returned iterator also has an `as_slice()` method to view the
     /// encoded form as a slice.

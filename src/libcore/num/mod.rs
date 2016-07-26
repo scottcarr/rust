@@ -11,7 +11,6 @@
 //! Numeric traits and functions for the built-in numeric types.
 
 #![stable(feature = "rust1", since = "1.0.0")]
-#![allow(missing_docs)]
 
 use char::CharExt;
 use cmp::PartialOrd;
@@ -188,6 +187,12 @@ macro_rules! int_impl {
      $sub_with_overflow:path,
      $mul_with_overflow:path) => {
         /// Returns the smallest value that can be represented by this integer type.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// assert_eq!(i8::min_value(), -128);
+        /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
         pub const fn min_value() -> Self {
@@ -195,6 +200,12 @@ macro_rules! int_impl {
         }
 
         /// Returns the largest value that can be represented by this integer type.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// assert_eq!(i8::max_value(), 127);
+        /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
         pub const fn max_value() -> Self {
@@ -288,6 +299,8 @@ macro_rules! int_impl {
         /// Shifts the bits to the left by a specified amount, `n`,
         /// wrapping the truncated bits to the end of the resulting integer.
         ///
+        /// Please note this isn't the same operation as `<<`!
+        ///
         /// # Examples
         ///
         /// Basic usage:
@@ -307,6 +320,8 @@ macro_rules! int_impl {
         /// Shifts the bits to the right by a specified amount, `n`,
         /// wrapping the truncated bits to the beginning of the resulting
         /// integer.
+        ///
+        /// Please note this isn't the same operation as `>>`!
         ///
         /// # Examples
         ///
@@ -1250,11 +1265,23 @@ macro_rules! uint_impl {
      $sub_with_overflow:path,
      $mul_with_overflow:path) => {
         /// Returns the smallest value that can be represented by this integer type.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// assert_eq!(u8::min_value(), 0);
+        /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
         pub const fn min_value() -> Self { 0 }
 
         /// Returns the largest value that can be represented by this integer type.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// assert_eq!(u8::max_value(), 255);
+        /// ```
         #[stable(feature = "rust1", since = "1.0.0")]
         #[inline]
         pub const fn max_value() -> Self { !0 }
@@ -1361,6 +1388,8 @@ macro_rules! uint_impl {
         /// Shifts the bits to the left by a specified amount, `n`,
         /// wrapping the truncated bits to the end of the resulting integer.
         ///
+        /// Please note this isn't the same operation as `<<`!
+        ///
         /// # Examples
         ///
         /// Basic usage:
@@ -1382,6 +1411,8 @@ macro_rules! uint_impl {
         /// Shifts the bits to the right by a specified amount, `n`,
         /// wrapping the truncated bits to the beginning of the resulting
         /// integer.
+        ///
+        /// Please note this isn't the same operation as `>>`!
         ///
         /// # Examples
         ///
@@ -2277,26 +2308,45 @@ impl usize {
 ///
 /// [`f32::classify()`]: ../../std/primitive.f32.html#method.classify
 /// [`f64::classify()`]: ../../std/primitive.f64.html#method.classify
+///
+/// # Examples
+///
+/// ```
+/// use std::num::FpCategory;
+/// use std::f32;
+///
+/// let num = 12.4_f32;
+/// let inf = f32::INFINITY;
+/// let zero = 0f32;
+/// let sub: f32 = 1.1754942e-38;
+/// let nan = f32::NAN;
+///
+/// assert_eq!(num.classify(), FpCategory::Normal);
+/// assert_eq!(inf.classify(), FpCategory::Infinite);
+/// assert_eq!(zero.classify(), FpCategory::Zero);
+/// assert_eq!(nan.classify(), FpCategory::Nan);
+/// assert_eq!(sub.classify(), FpCategory::Subnormal);
+/// ```
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub enum FpCategory {
-    /// "Not a Number", often obtained by dividing by zero
+    /// "Not a Number", often obtained by dividing by zero.
     #[stable(feature = "rust1", since = "1.0.0")]
     Nan,
 
-    /// Positive or negative infinity
+    /// Positive or negative infinity.
     #[stable(feature = "rust1", since = "1.0.0")]
     Infinite ,
 
-    /// Positive or negative zero
+    /// Positive or negative zero.
     #[stable(feature = "rust1", since = "1.0.0")]
     Zero,
 
-    /// De-normalized floating point representation (less precise than `Normal`)
+    /// De-normalized floating point representation (less precise than `Normal`).
     #[stable(feature = "rust1", since = "1.0.0")]
     Subnormal,
 
-    /// A regular floating point number
+    /// A regular floating point number.
     #[stable(feature = "rust1", since = "1.0.0")]
     Normal,
 }

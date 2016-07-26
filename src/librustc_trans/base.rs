@@ -25,14 +25,11 @@
 
 #![allow(non_camel_case_types)]
 
-pub use self::ValueOrigin::*;
-
 use super::CrateTranslation;
 use super::ModuleTranslation;
 
 use back::link;
 use back::linker::LinkerInfo;
-use lint;
 use llvm::{BasicBlockRef, Linkage, ValueRef, Vector, get_param};
 use llvm;
 use rustc::cfg;
@@ -60,7 +57,7 @@ use callee::{Callee, CallArgs, ArgExprs, ArgVals};
 use cleanup::{self, CleanupMethods, DropHint};
 use closure;
 use common::{Block, C_bool, C_bytes_in_context, C_i32, C_int, C_uint, C_integral};
-use collector::{self, TransItemState, TransItemCollectionMode};
+use collector::{self, TransItemCollectionMode};
 use common::{C_null, C_struct_in_context, C_u64, C_u8, C_undef};
 use common::{CrateContext, DropFlagHintsMap, Field, FunctionContext};
 use common::{Result, NodeIdAndSpan, VariantInfo};
@@ -77,28 +74,31 @@ use expr;
 use glue;
 use inline;
 use machine;
-use machine::{llalign_of_min, llsize_of, llsize_of_real};
+use machine::{llalign_of_min, llsize_of};
 use meth;
 use mir;
 use monomorphize::{self, Instance};
 use partitioning::{self, PartitioningStrategy, CodegenUnit};
+use symbol_map::SymbolMap;
 use symbol_names_test;
 use trans_item::TransItem;
 use tvec;
 use type_::Type;
 use type_of;
-use type_of::*;
 use value::Value;
 use Disr;
 use util::common::indenter;
 use util::sha2::Sha256;
-use util::nodemap::{NodeMap, NodeSet};
+use util::nodemap::{NodeMap, NodeSet, FnvHashSet};
 
 use arena::TypedArena;
 use libc::c_uint;
 use std::ffi::{CStr, CString};
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::ptr;
+use std::rc::Rc;
 use std::str;
 use std::{i8, i16, i32, i64};
 use syntax_pos::{Span, DUMMY_SP};
@@ -1407,19 +1407,17 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
     pub fn new(ccx: &'blk CrateContext<'blk, 'tcx>,
                llfndecl: ValueRef,
                fn_ty: FnType,
-               definition: Option<(Instance<'tcx>, &ty::FnSig<'tcx>, Abi)>,
+               definition: Option<(Instance<'tcx>, &ty::FnSig<'tcx>, Abi, ast::NodeId)>,
                block_arena: &'blk TypedArena<common::BlockS<'blk, 'tcx>>)
                -> FunctionContext<'blk, 'tcx> {
-        let (param_substs, def_id) = match definition {
-            Some((instance, _, _)) => {
+        let (param_substs, def_id, inlined_id) = match definition {
+            Some((instance, _, _, inlined_id)) => {
                 common::validate_substs(instance.substs);
-                (instance.substs, Some(instance.def))
+                (instance.substs, Some(instance.def), Some(inlined_id))
             }
-            None => (ccx.tcx().mk_substs(Substs::empty()), None)
+            None => (ccx.tcx().mk_substs(Substs::empty()), None, None)
         };
 
-        let inlined_did = def_id.and_then(|def_id| inline::get_local_instance(ccx, def_id));
-        let inlined_id = inlined_did.and_then(|id| ccx.tcx().map.as_local_node_id(id));
         let local_id = def_id.and_then(|id| ccx.tcx().map.as_local_node_id(id));
 
         debug!("FunctionContext::new({})",
@@ -1454,7 +1452,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
         };
 
         let debug_context = if let (false, Some(definition)) = (no_debug, definition) {
-            let (instance, sig, abi) = definition;
+            let (instance, sig, abi, _) = definition;
             debuginfo::create_function_debug_context(ccx, instance, sig, abi, llfndecl)
         } else {
             debuginfo::empty_function_debug_context(ccx)
@@ -1832,10 +1830,6 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                closure_env: closure::ClosureEnv) {
     ccx.stats().n_closures.set(ccx.stats().n_closures.get() + 1);
 
-    if collector::collecting_debug_information(ccx.shared()) {
-        ccx.record_translation_item_as_generated(TransItem::Fn(instance));
-    }
-
     let _icx = push_ctxt("trans_closure");
     if !ccx.sess().no_landing_pads() {
         attributes::emit_uwtable(llfndecl, true);
@@ -1850,7 +1844,11 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     let (arena, fcx): (TypedArena<_>, FunctionContext);
     arena = TypedArena::new();
-    fcx = FunctionContext::new(ccx, llfndecl, fn_ty, Some((instance, sig, abi)), &arena);
+    fcx = FunctionContext::new(ccx,
+                               llfndecl,
+                               fn_ty,
+                               Some((instance, sig, abi, inlined_id)),
+                               &arena);
 
     if fcx.mir.is_some() {
         return mir::trans_mir(&fcx);
@@ -1916,35 +1914,47 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     fcx.finish(bcx, fn_cleanup_debug_loc.debug_loc());
 }
 
-/// Creates an LLVM function corresponding to a source language function.
-pub fn trans_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
-                          decl: &hir::FnDecl,
-                          body: &hir::Block,
-                          llfndecl: ValueRef,
-                          param_substs: &'tcx Substs<'tcx>,
-                          id: ast::NodeId) {
-    let _s = StatRecorder::new(ccx, ccx.tcx().node_path_str(id));
-    debug!("trans_fn(param_substs={:?})", param_substs);
-    let _icx = push_ctxt("trans_fn");
-    let def_id = if let Some(&def_id) = ccx.external_srcs().borrow().get(&id) {
-        def_id
-    } else {
-        ccx.tcx().map.local_def_id(id)
-    };
-    let fn_ty = ccx.tcx().lookup_item_type(def_id).ty;
-    let fn_ty = monomorphize::apply_param_substs(ccx.tcx(), param_substs, &fn_ty);
+pub fn trans_instance<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, instance: Instance<'tcx>) {
+    let instance = inline::maybe_inline_instance(ccx, instance);
+
+    let fn_node_id = ccx.tcx().map.as_local_node_id(instance.def).unwrap();
+
+    let _s = StatRecorder::new(ccx, ccx.tcx().node_path_str(fn_node_id));
+    debug!("trans_instance(instance={:?})", instance);
+    let _icx = push_ctxt("trans_instance");
+
+    let item = ccx.tcx().map.find(fn_node_id).unwrap();
+
+    let fn_ty = ccx.tcx().lookup_item_type(instance.def).ty;
+    let fn_ty = ccx.tcx().erase_regions(&fn_ty);
+    let fn_ty = monomorphize::apply_param_substs(ccx.tcx(), instance.substs, &fn_ty);
+
     let sig = ccx.tcx().erase_late_bound_regions(fn_ty.fn_sig());
     let sig = ccx.tcx().normalize_associated_type(&sig);
     let abi = fn_ty.fn_abi();
-    trans_closure(ccx,
-                  decl,
-                  body,
-                  llfndecl,
-                  Instance::new(def_id, param_substs),
-                  id,
-                  &sig,
-                  abi,
-                  closure::ClosureEnv::NotClosure);
+
+    let lldecl = match ccx.instances().borrow().get(&instance) {
+        Some(&val) => val,
+        None => bug!("Instance `{:?}` not already declared", instance)
+    };
+
+    match item {
+        hir_map::NodeItem(&hir::Item {
+            node: hir::ItemFn(ref decl, _, _, _, _, ref body), ..
+        }) |
+        hir_map::NodeTraitItem(&hir::TraitItem {
+            node: hir::MethodTraitItem(
+                hir::MethodSig { ref decl, .. }, Some(ref body)), ..
+        }) |
+        hir_map::NodeImplItem(&hir::ImplItem {
+            node: hir::ImplItemKind::Method(
+                hir::MethodSig { ref decl, .. }, ref body), ..
+        }) => {
+            trans_closure(ccx, decl, body, lldecl, instance,
+                          fn_node_id, &sig, abi, closure::ClosureEnv::NotClosure);
+        }
+        _ => bug!("Instance is a {:?}?", item)
+    }
 }
 
 pub fn trans_named_tuple_constructor<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
@@ -2064,87 +2074,6 @@ pub fn trans_ctor_shim<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     fcx.finish(bcx, DebugLoc::None);
 }
 
-fn enum_variant_size_lint(ccx: &CrateContext, enum_def: &hir::EnumDef, sp: Span, id: ast::NodeId) {
-    let mut sizes = Vec::new(); // does no allocation if no pushes, thankfully
-
-    let print_info = ccx.sess().print_enum_sizes();
-
-    let levels = ccx.tcx().node_lint_levels.borrow();
-    let lint_id = lint::LintId::of(lint::builtin::VARIANT_SIZE_DIFFERENCES);
-    let lvlsrc = levels.get(&(id, lint_id));
-    let is_allow = lvlsrc.map_or(true, |&(lvl, _)| lvl == lint::Allow);
-
-    if is_allow && !print_info {
-        // we're not interested in anything here
-        return;
-    }
-
-    let ty = ccx.tcx().node_id_to_type(id);
-    let avar = adt::represent_type(ccx, ty);
-    match *avar {
-        adt::General(_, ref variants, _) => {
-            for var in variants {
-                let mut size = 0;
-                for field in var.fields.iter().skip(1) {
-                    // skip the discriminant
-                    size += llsize_of_real(ccx, sizing_type_of(ccx, *field));
-                }
-                sizes.push(size);
-            }
-        },
-        _ => { /* its size is either constant or unimportant */ }
-    }
-
-    let (largest, slargest, largest_index) = sizes.iter().enumerate().fold((0, 0, 0),
-        |(l, s, li), (idx, &size)|
-            if size > l {
-                (size, l, idx)
-            } else if size > s {
-                (l, size, li)
-            } else {
-                (l, s, li)
-            }
-    );
-
-    // FIXME(#30505) Should use logging for this.
-    if print_info {
-        let llty = type_of::sizing_type_of(ccx, ty);
-
-        let sess = &ccx.tcx().sess;
-        sess.span_note_without_error(sp,
-                                     &format!("total size: {} bytes", llsize_of_real(ccx, llty)));
-        match *avar {
-            adt::General(..) => {
-                for (i, var) in enum_def.variants.iter().enumerate() {
-                    ccx.tcx()
-                       .sess
-                       .span_note_without_error(var.span,
-                                                &format!("variant data: {} bytes", sizes[i]));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // we only warn if the largest variant is at least thrice as large as
-    // the second-largest.
-    if !is_allow && largest > slargest * 3 && slargest > 0 {
-        // Use lint::raw_emit_lint rather than sess.add_lint because the lint-printing
-        // pass for the latter already ran.
-        lint::raw_struct_lint(&ccx.tcx().sess,
-                              &ccx.tcx().sess.lint_store.borrow(),
-                              lint::builtin::VARIANT_SIZE_DIFFERENCES,
-                              *lvlsrc.unwrap(),
-                              Some(sp),
-                              &format!("enum variant is more than three times larger ({} bytes) \
-                                        than the next largest (ignoring padding)",
-                                       largest))
-            .span_note(enum_def.variants[largest_index].span,
-                       "this variant is the largest")
-            .emit();
-    }
-}
-
 pub fn llvm_linkage_by_name(name: &str) -> Option<Linkage> {
     // Use the names from src/llvm/docs/LangRef.rst here. Most types are only
     // applicable to variable declarations and may not really make sense for
@@ -2170,86 +2099,10 @@ pub fn llvm_linkage_by_name(name: &str) -> Option<Linkage> {
     }
 }
 
-
-/// Enum describing the origin of an LLVM `Value`, for linkage purposes.
-#[derive(Copy, Clone)]
-pub enum ValueOrigin {
-    /// The LLVM `Value` is in this context because the corresponding item was
-    /// assigned to the current compilation unit.
-    OriginalTranslation,
-    /// The `Value`'s corresponding item was assigned to some other compilation
-    /// unit, but the `Value` was translated in this context anyway because the
-    /// item is marked `#[inline]`.
-    InlinedCopy,
-}
-
-/// Set the appropriate linkage for an LLVM `ValueRef` (function or global).
-/// If the `llval` is the direct translation of a specific Rust item, `id`
-/// should be set to the `NodeId` of that item.  (This mapping should be
-/// 1-to-1, so monomorphizations and drop/visit glue should have `id` set to
-/// `None`.)  `llval_origin` indicates whether `llval` is the translation of an
-/// item assigned to `ccx`'s compilation unit or an inlined copy of an item
-/// assigned to a different compilation unit.
-pub fn update_linkage(ccx: &CrateContext,
-                      llval: ValueRef,
-                      id: Option<ast::NodeId>,
-                      llval_origin: ValueOrigin) {
-    match llval_origin {
-        InlinedCopy => {
-            // `llval` is a translation of an item defined in a separate
-            // compilation unit.  This only makes sense if there are at least
-            // two compilation units.
-            assert!(ccx.sess().opts.cg.codegen_units > 1 ||
-                    ccx.sess().opts.debugging_opts.incremental.is_some());
-            // `llval` is a copy of something defined elsewhere, so use
-            // `AvailableExternallyLinkage` to avoid duplicating code in the
-            // output.
-            llvm::SetLinkage(llval, llvm::AvailableExternallyLinkage);
-            return;
-        },
-        OriginalTranslation => {},
-    }
-
-    if let Some(id) = id {
-        let item = ccx.tcx().map.get(id);
-        if let hir_map::NodeItem(i) = item {
-            if let Some(name) = attr::first_attr_value_str_by_name(&i.attrs, "linkage") {
-                if let Some(linkage) = llvm_linkage_by_name(&name) {
-                    llvm::SetLinkage(llval, linkage);
-                } else {
-                    ccx.sess().span_fatal(i.span, "invalid linkage specified");
-                }
-                return;
-            }
-        }
-    }
-
-    let (is_reachable, is_generic) = if let Some(id) = id {
-        (ccx.reachable().contains(&id), false)
-    } else {
-        (false, true)
-    };
-
-    // We need external linkage for items reachable from other translation units, this include
-    // other codegen units in case of parallel compilations.
-    if is_reachable || ccx.sess().opts.cg.codegen_units > 1 {
-        if is_generic {
-            // This only happens with multiple codegen units, in which case we need to use weak_odr
-            // linkage because other crates might expose the same symbol. We cannot use
-            // linkonce_odr here because the symbol might then get dropped before the other codegen
-            // units get to link it.
-            llvm::SetUniqueComdat(ccx.llmod(), llval);
-            llvm::SetLinkage(llval, llvm::WeakODRLinkage);
-        } else {
-            llvm::SetLinkage(llval, llvm::ExternalLinkage);
-        }
-    } else {
-        llvm::SetLinkage(llval, llvm::InternalLinkage);
-    }
-}
-
-fn set_global_section(ccx: &CrateContext, llval: ValueRef, i: &hir::Item) {
-    if let Some(sect) = attr::first_attr_value_str_by_name(&i.attrs, "link_section") {
+pub fn set_link_section(ccx: &CrateContext,
+                        llval: ValueRef,
+                        attrs: &[ast::Attribute]) {
+    if let Some(sect) = attr::first_attr_value_str_by_name(attrs, "link_section") {
         if contains_null(&sect) {
             ccx.sess().fatal(&format!("Illegal null byte in link_section value: `{}`", &sect));
         }
@@ -2260,109 +2113,40 @@ fn set_global_section(ccx: &CrateContext, llval: ValueRef, i: &hir::Item) {
     }
 }
 
-pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
-    let _icx = push_ctxt("trans_item");
-
-    let tcx = ccx.tcx();
-    let from_external = ccx.external_srcs().borrow().contains_key(&item.id);
-
-    match item.node {
-        hir::ItemFn(ref decl, _, _, _, ref generics, ref body) => {
-            if !generics.is_type_parameterized() {
-                let trans_everywhere = attr::requests_inline(&item.attrs);
-                // Ignore `trans_everywhere` for cross-crate inlined items
-                // (`from_external`).  `trans_item` will be called once for each
-                // compilation unit that references the item, so it will still get
-                // translated everywhere it's needed.
-                for (ref ccx, is_origin) in ccx.maybe_iter(!from_external && trans_everywhere) {
-                    let def_id = tcx.map.local_def_id(item.id);
-                    let empty_substs = ccx.empty_substs_for_def_id(def_id);
-                    let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
-                    trans_fn(ccx, &decl, &body, llfn, empty_substs, item.id);
-                    set_global_section(ccx, llfn, item);
-                    update_linkage(ccx,
-                                   llfn,
-                                   Some(item.id),
-                                   if is_origin {
-                                       OriginalTranslation
-                                   } else {
-                                       InlinedCopy
-                                   });
-
-                    if is_entry_fn(ccx.sess(), item.id) {
-                        create_entry_wrapper(ccx, item.span, llfn);
-                        // check for the #[rustc_error] annotation, which forces an
-                        // error in trans. This is used to write compile-fail tests
-                        // that actually test that compilation succeeds without
-                        // reporting an error.
-                        if tcx.has_attr(def_id, "rustc_error") {
-                            tcx.sess.span_fatal(item.span, "compilation successful");
-                        }
-                    }
-                }
-            }
+/// Create the `main` function which will initialise the rust runtime and call
+/// users’ main function.
+pub fn maybe_create_entry_wrapper(ccx: &CrateContext) {
+    let (main_def_id, span) = match *ccx.sess().entry_fn.borrow() {
+        Some((id, span)) => {
+            (ccx.tcx().map.local_def_id(id), span)
         }
-        hir::ItemImpl(_, _, ref generics, _, _, ref impl_items) => {
-            // Both here and below with generic methods, be sure to recurse and look for
-            // items that we need to translate.
-            if !generics.ty_params.is_empty() {
-                return;
-            }
+        None => return,
+    };
 
-            for impl_item in impl_items {
-                if let hir::ImplItemKind::Method(ref sig, ref body) = impl_item.node {
-                    if sig.generics.ty_params.is_empty() {
-                        let trans_everywhere = attr::requests_inline(&impl_item.attrs);
-                        for (ref ccx, is_origin) in ccx.maybe_iter(trans_everywhere) {
-                            let def_id = tcx.map.local_def_id(impl_item.id);
-                            let empty_substs = ccx.empty_substs_for_def_id(def_id);
-                            let llfn = Callee::def(ccx, def_id, empty_substs).reify(ccx).val;
-                            trans_fn(ccx, &sig.decl, body, llfn, empty_substs, impl_item.id);
-                            update_linkage(ccx, llfn, Some(impl_item.id),
-                                if is_origin {
-                                    OriginalTranslation
-                                } else {
-                                    InlinedCopy
-                                });
-                        }
-                    }
-                }
-            }
-        }
-        hir::ItemEnum(ref enum_definition, ref gens) => {
-            if gens.ty_params.is_empty() {
-                // sizes only make sense for non-generic types
-                enum_variant_size_lint(ccx, enum_definition, item.span, item.id);
-            }
-        }
-        hir::ItemStatic(_, m, ref expr) => {
-            let g = match consts::trans_static(ccx, m, expr, item.id, &item.attrs) {
-                Ok(g) => g,
-                Err(err) => ccx.tcx().sess.span_fatal(expr.span, &err.description()),
-            };
-            set_global_section(ccx, g, item);
-            update_linkage(ccx, g, Some(item.id), OriginalTranslation);
-        }
-        _ => {}
+    // check for the #[rustc_error] annotation, which forces an
+    // error in trans. This is used to write compile-fail tests
+    // that actually test that compilation succeeds without
+    // reporting an error.
+    if ccx.tcx().has_attr(main_def_id, "rustc_error") {
+        ccx.tcx().sess.span_fatal(span, "compilation successful");
     }
-}
 
-pub fn is_entry_fn(sess: &Session, node_id: ast::NodeId) -> bool {
-    match *sess.entry_fn.borrow() {
-        Some((entry_id, _)) => node_id == entry_id,
-        None => false,
+    let instance = Instance::mono(ccx.shared(), main_def_id);
+
+    if !ccx.codegen_unit().items.contains_key(&TransItem::Fn(instance)) {
+        // We want to create the wrapper in the same codegen unit as Rust's main
+        // function.
+        return;
     }
-}
 
-/// Create the `main` function which will initialise the rust runtime and call users’ main
-/// function.
-pub fn create_entry_wrapper(ccx: &CrateContext, sp: Span, main_llfn: ValueRef) {
+    let main_llfn = Callee::def(ccx, main_def_id, instance.substs).reify(ccx).val;
+
     let et = ccx.sess().entry_type.get().unwrap();
     match et {
         config::EntryMain => {
-            create_entry_fn(ccx, sp, main_llfn, true);
+            create_entry_fn(ccx, span, main_llfn, true);
         }
-        config::EntryStart => create_entry_fn(ccx, sp, main_llfn, false),
+        config::EntryStart => create_entry_fn(ccx, span, main_llfn, false),
         config::EntryNone => {}    // Do nothing.
     }
 
@@ -2419,7 +2203,7 @@ pub fn create_entry_wrapper(ccx: &CrateContext, sp: Span, main_llfn: ValueRef) {
                                                  start_fn,
                                                  args.as_ptr(),
                                                  args.len() as c_uint,
-                                                 0 as *mut _,
+                                                 ptr::null_mut(),
                                                  noname());
 
             llvm::LLVMBuildRet(bld, result);
@@ -2473,50 +2257,89 @@ fn write_metadata(cx: &SharedCrateContext,
 
 /// Find any symbols that are defined in one compilation unit, but not declared
 /// in any other compilation unit.  Give these symbols internal linkage.
-fn internalize_symbols(cx: &CrateContextList, reachable: &HashSet<&str>) {
-    unsafe {
-        let mut declared = HashSet::new();
+fn internalize_symbols<'a, 'tcx>(ccxs: &CrateContextList<'a, 'tcx>,
+                                 symbol_map: &SymbolMap<'tcx>,
+                                 reachable: &FnvHashSet<&str>) {
+    let scx = ccxs.shared();
+    let tcx = scx.tcx();
 
-        // Collect all external declarations in all compilation units.
-        for ccx in cx.iter() {
+    // 'unsafe' because we are holding on to CStr's from the LLVM module within
+    // this block.
+    unsafe {
+        let mut referenced_somewhere = FnvHashSet();
+
+        // Collect all symbols that need to stay externally visible because they
+        // are referenced via a declaration in some other codegen unit.
+        for ccx in ccxs.iter() {
             for val in iter_globals(ccx.llmod()).chain(iter_functions(ccx.llmod())) {
                 let linkage = llvm::LLVMGetLinkage(val);
                 // We only care about external declarations (not definitions)
                 // and available_externally definitions.
-                if !(linkage == llvm::ExternalLinkage as c_uint &&
-                     llvm::LLVMIsDeclaration(val) != 0) &&
-                   !(linkage == llvm::AvailableExternallyLinkage as c_uint) {
-                    continue;
-                }
+                let is_available_externally = linkage == llvm::AvailableExternallyLinkage as c_uint;
+                let is_decl = llvm::LLVMIsDeclaration(val) != 0;
 
-                let name = CStr::from_ptr(llvm::LLVMGetValueName(val))
-                               .to_bytes()
-                               .to_vec();
-                declared.insert(name);
+                if is_decl || is_available_externally {
+                    let symbol_name = CStr::from_ptr(llvm::LLVMGetValueName(val));
+                    referenced_somewhere.insert(symbol_name);
+                }
             }
         }
+
+        // Also collect all symbols for which we cannot adjust linkage, because
+        // it is fixed by some directive in the source code (e.g. #[no_mangle]).
+        let linkage_fixed_explicitly: FnvHashSet<_> = scx
+            .translation_items()
+            .borrow()
+            .iter()
+            .cloned()
+            .filter(|trans_item|{
+                let def_id = match *trans_item {
+                    TransItem::DropGlue(..) => {
+                        return false
+                    },
+                    TransItem::Fn(ref instance) => {
+                        instance.def
+                    }
+                    TransItem::Static(node_id) => {
+                        tcx.map.local_def_id(node_id)
+                    }
+                };
+
+                trans_item.explicit_linkage(tcx).is_some() ||
+                attr::contains_extern_indicator(tcx.sess.diagnostic(),
+                                                &tcx.get_attrs(def_id))
+            })
+            .map(|trans_item| symbol_map.get_or_compute(scx, trans_item))
+            .collect();
 
         // Examine each external definition.  If the definition is not used in
         // any other compilation unit, and is not reachable from other crates,
         // then give it internal linkage.
-        for ccx in cx.iter() {
+        for ccx in ccxs.iter() {
             for val in iter_globals(ccx.llmod()).chain(iter_functions(ccx.llmod())) {
                 let linkage = llvm::LLVMGetLinkage(val);
-                // We only care about external definitions.
-                if !((linkage == llvm::ExternalLinkage as c_uint ||
-                      linkage == llvm::WeakODRLinkage as c_uint) &&
-                     llvm::LLVMIsDeclaration(val) == 0) {
-                    continue;
-                }
 
-                let name = CStr::from_ptr(llvm::LLVMGetValueName(val))
-                               .to_bytes()
-                               .to_vec();
-                if !declared.contains(&name) &&
-                   !reachable.contains(str::from_utf8(&name).unwrap()) {
-                    llvm::SetLinkage(val, llvm::InternalLinkage);
-                    llvm::SetDLLStorageClass(val, llvm::DefaultStorageClass);
-                    llvm::UnsetComdat(val);
+                let is_externally_visible = (linkage == llvm::ExternalLinkage as c_uint) ||
+                                            (linkage == llvm::LinkOnceODRLinkage as c_uint) ||
+                                            (linkage == llvm::WeakODRLinkage as c_uint);
+                let is_definition = llvm::LLVMIsDeclaration(val) == 0;
+
+                // If this is a definition (as opposed to just a declaration)
+                // and externally visible, check if we can internalize it
+                if is_definition && is_externally_visible {
+                    let name_cstr = CStr::from_ptr(llvm::LLVMGetValueName(val));
+                    let name_str = name_cstr.to_str().unwrap();
+                    let name_cow = Cow::Borrowed(name_str);
+
+                    let is_referenced_somewhere = referenced_somewhere.contains(&name_cstr);
+                    let is_reachable = reachable.contains(&name_str);
+                    let has_fixed_linkage = linkage_fixed_explicitly.contains(&name_cow);
+
+                    if !is_referenced_somewhere && !is_reachable && !has_fixed_linkage {
+                        llvm::SetLinkage(val, llvm::InternalLinkage);
+                        llvm::SetDLLStorageClass(val, llvm::DefaultStorageClass);
+                        llvm::UnsetComdat(val);
+                    }
                 }
             }
         }
@@ -2610,8 +2433,8 @@ fn iter_functions(llmod: llvm::ModuleRef) -> ValueIter {
 ///
 /// This list is later used by linkers to determine the set of symbols needed to
 /// be exposed from a dynamic library and it's also encoded into the metadata.
-pub fn filter_reachable_ids(scx: &SharedCrateContext) -> NodeSet {
-    scx.reachable().iter().map(|x| *x).filter(|&id| {
+pub fn filter_reachable_ids(tcx: TyCtxt, reachable: NodeSet) -> NodeSet {
+    reachable.into_iter().filter(|&id| {
         // Next, we want to ignore some FFI functions that are not exposed from
         // this crate. Reachable FFI functions can be lumped into two
         // categories:
@@ -2625,9 +2448,9 @@ pub fn filter_reachable_ids(scx: &SharedCrateContext) -> NodeSet {
         //
         // As a result, if this id is an FFI item (foreign item) then we only
         // let it through if it's included statically.
-        match scx.tcx().map.get(id) {
+        match tcx.map.get(id) {
             hir_map::NodeForeignItem(..) => {
-                scx.sess().cstore.is_statically_included_foreign_item(id)
+                tcx.sess.cstore.is_statically_included_foreign_item(id)
             }
 
             // Only consider nodes that actually have exported symbols.
@@ -2637,8 +2460,8 @@ pub fn filter_reachable_ids(scx: &SharedCrateContext) -> NodeSet {
                 node: hir::ItemFn(..), .. }) |
             hir_map::NodeImplItem(&hir::ImplItem {
                 node: hir::ImplItemKind::Method(..), .. }) => {
-                let def_id = scx.tcx().map.local_def_id(id);
-                let scheme = scx.tcx().lookup_item_type(def_id);
+                let def_id = tcx.map.local_def_id(id);
+                let scheme = tcx.lookup_item_type(def_id);
                 scheme.generics.types.is_empty()
             }
 
@@ -2660,6 +2483,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let krate = tcx.map.krate();
 
     let ty::CrateAnalysis { export_map, reachable, name, .. } = analysis;
+    let reachable = filter_reachable_ids(tcx, reachable);
 
     let check_overflow = if let Some(v) = tcx.sess.opts.debugging_opts.force_overflow_checks {
         v
@@ -2683,29 +2507,33 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                              reachable,
                                              check_overflow,
                                              check_dropflag);
-
-    let reachable_symbol_ids = filter_reachable_ids(&shared_ccx);
-
     // Translate the metadata.
     let metadata = time(tcx.sess.time_passes(), "write metadata", || {
-        write_metadata(&shared_ccx, &reachable_symbol_ids)
+        write_metadata(&shared_ccx, shared_ccx.reachable())
     });
 
     let metadata_module = ModuleTranslation {
+        name: "metadata".to_string(),
         llcx: shared_ccx.metadata_llcx(),
         llmod: shared_ccx.metadata_llmod(),
     };
     let no_builtins = attr::contains_name(&krate.attrs, "no_builtins");
 
-    let codegen_units = collect_and_partition_translation_items(&shared_ccx);
-    let codegen_unit_count = codegen_units.len();
-    assert!(tcx.sess.opts.cg.codegen_units == codegen_unit_count ||
-            tcx.sess.opts.debugging_opts.incremental.is_some());
+    // Run the translation item collector and partition the collected items into
+    // codegen units.
+    let (codegen_units, symbol_map) = collect_and_partition_translation_items(&shared_ccx);
 
-    let crate_context_list = CrateContextList::new(&shared_ccx, codegen_units);
+    let symbol_map = Rc::new(symbol_map);
 
+    let crate_context_list = CrateContextList::new(&shared_ccx,
+                                                   codegen_units,
+                                                   symbol_map.clone());
     let modules = crate_context_list.iter()
-        .map(|ccx| ModuleTranslation { llcx: ccx.llcx(), llmod: ccx.llmod() })
+        .map(|ccx| ModuleTranslation {
+            name: String::from(&ccx.codegen_unit().name[..]),
+            llcx: ccx.llcx(),
+            llmod: ccx.llmod()
+        })
         .collect();
 
     // Skip crate items and just output metadata in -Z no-trans mode.
@@ -2722,26 +2550,30 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         };
     }
 
-    {
-        let ccx = crate_context_list.get_ccx(0);
+    // Instantiate translation items without filling out definitions yet...
+    for ccx in crate_context_list.iter() {
+        let trans_items = ccx.codegen_unit()
+                             .items_in_deterministic_order(tcx, &symbol_map);
 
-        // Translate all items. See `TransModVisitor` for
-        // details on why we walk in this particular way.
-        {
-            let _icx = push_ctxt("text");
-            intravisit::walk_mod(&mut TransItemsWithinModVisitor { ccx: &ccx }, &krate.module);
-            krate.visit_all_items(&mut TransModVisitor { ccx: &ccx });
+        for (trans_item, linkage) in trans_items {
+            trans_item.predefine(&ccx, linkage);
         }
-
-        collector::print_collection_results(ccx.shared());
-
-        symbol_names_test::report_symbol_names(&ccx);
     }
 
+    // ... and now that we have everything pre-defined, fill out those definitions.
     for ccx in crate_context_list.iter() {
-        if ccx.sess().opts.debuginfo != NoDebugInfo {
-            debuginfo::finalize(&ccx);
+        let trans_items = ccx.codegen_unit()
+                             .items_in_deterministic_order(tcx, &symbol_map);
+
+        for (trans_item, _) in trans_items {
+           trans_item.define(&ccx);
         }
+
+        // If this codegen unit contains the main function, also create the
+        // wrapper here
+        maybe_create_entry_wrapper(&ccx);
+
+        // Run replace-all-uses-with for statics that need it
         for &(old_g, new_g) in ccx.statics_to_rauw().borrow().iter() {
             unsafe {
                 let bitcast = llvm::LLVMConstPointerCast(new_g, llvm::LLVMTypeOf(old_g));
@@ -2749,7 +2581,14 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 llvm::LLVMDeleteGlobal(old_g);
             }
         }
+
+        // Finalize debuginfo
+        if ccx.sess().opts.debuginfo != NoDebugInfo {
+            debuginfo::finalize(&ccx);
+        }
     }
+
+    symbol_names_test::report_symbol_names(&shared_ccx);
 
     if shared_ccx.sess().trans_stats() {
         let stats = shared_ccx.stats();
@@ -2757,6 +2596,8 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         println!("n_glues_created: {}", stats.n_glues_created.get());
         println!("n_null_glues: {}", stats.n_null_glues.get());
         println!("n_real_glues: {}", stats.n_real_glues.get());
+
+        println!("n_fallback_instantiations: {}", stats.n_fallback_instantiations.get());
 
         println!("n_fns: {}", stats.n_fns.get());
         println!("n_monos: {}", stats.n_monos.get());
@@ -2774,6 +2615,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             }
         }
     }
+
     if shared_ccx.sess().count_llvm_insns() {
         for (k, v) in shared_ccx.stats().llvm_insns.borrow().iter() {
             println!("{:7} {}", *v, *k);
@@ -2781,10 +2623,11 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let sess = shared_ccx.sess();
-    let mut reachable_symbols = reachable_symbol_ids.iter().map(|&id| {
+    let mut reachable_symbols = shared_ccx.reachable().iter().map(|&id| {
         let def_id = shared_ccx.tcx().map.local_def_id(id);
-        Instance::mono(&shared_ccx, def_id).symbol_name(&shared_ccx)
+        symbol_for_def_id(def_id, &shared_ccx, &symbol_map)
     }).collect::<Vec<_>>();
+
     if sess.entry_fn.borrow().is_some() {
         reachable_symbols.push("main".to_string());
     }
@@ -2806,14 +2649,17 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         reachable_symbols.extend(syms.into_iter().filter(|did| {
             sess.cstore.is_extern_item(shared_ccx.tcx(), *did)
         }).map(|did| {
-            Instance::mono(&shared_ccx, did).symbol_name(&shared_ccx)
+            symbol_for_def_id(did, &shared_ccx, &symbol_map)
         }));
     }
 
-    if codegen_unit_count > 1 {
+    time(shared_ccx.sess().time_passes(), "internalize symbols", || {
         internalize_symbols(&crate_context_list,
-                            &reachable_symbols.iter().map(|x| &x[..]).collect());
-    }
+                            &symbol_map,
+                            &reachable_symbols.iter()
+                                              .map(|s| &s[..])
+                                              .collect())
+    });
 
     if sess.target.target.options.is_like_msvc &&
        sess.crate_types.borrow().iter().any(|ct| *ct == config::CrateTypeRlib) {
@@ -2821,6 +2667,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let linker_info = LinkerInfo::new(&shared_ccx, &reachable_symbols);
+
     CrateTranslation {
         modules: modules,
         metadata_module: metadata_module,
@@ -2832,74 +2679,8 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 }
 
-/// We visit all the items in the krate and translate them.  We do
-/// this in two walks. The first walk just finds module items. It then
-/// walks the full contents of those module items and translates all
-/// the items within. Note that this entire process is O(n). The
-/// reason for this two phased walk is that each module is
-/// (potentially) placed into a distinct codegen-unit. This walk also
-/// ensures that the immediate contents of each module is processed
-/// entirely before we proceed to find more modules, helping to ensure
-/// an equitable distribution amongst codegen-units.
-pub struct TransModVisitor<'a, 'tcx: 'a> {
-    pub ccx: &'a CrateContext<'a, 'tcx>,
-}
-
-impl<'a, 'tcx, 'v> Visitor<'v> for TransModVisitor<'a, 'tcx> {
-    fn visit_item(&mut self, i: &hir::Item) {
-        match i.node {
-            hir::ItemMod(_) => {
-                let item_ccx = self.ccx.rotate();
-                intravisit::walk_item(&mut TransItemsWithinModVisitor { ccx: &item_ccx }, i);
-            }
-            _ => { }
-        }
-    }
-}
-
-/// Translates all the items within a given module. Expects owner to
-/// invoke `walk_item` on a module item. Ignores nested modules.
-pub struct TransItemsWithinModVisitor<'a, 'tcx: 'a> {
-    pub ccx: &'a CrateContext<'a, 'tcx>,
-}
-
-impl<'a, 'tcx, 'v> Visitor<'v> for TransItemsWithinModVisitor<'a, 'tcx> {
-    fn visit_nested_item(&mut self, item_id: hir::ItemId) {
-        self.visit_item(self.ccx.tcx().map.expect_item(item_id.id));
-    }
-
-    fn visit_item(&mut self, i: &hir::Item) {
-        match i.node {
-            hir::ItemMod(..) => {
-                // skip modules, they will be uncovered by the TransModVisitor
-            }
-            _ => {
-                let def_id = self.ccx.tcx().map.local_def_id(i.id);
-                let tcx = self.ccx.tcx();
-
-                // Create a subtask for trans'ing a particular item. We are
-                // giving `trans_item` access to this item, so also record a read.
-                tcx.dep_graph.with_task(DepNode::TransCrateItem(def_id), || {
-                    tcx.dep_graph.read(DepNode::Hir(def_id));
-
-                    // We are going to be accessing various tables
-                    // generated by TypeckItemBody; we also assume
-                    // that the body passes type check. These tables
-                    // are not individually tracked, so just register
-                    // a read here.
-                    tcx.dep_graph.read(DepNode::TypeckItemBody(def_id));
-
-                    trans_item(self.ccx, i);
-                });
-
-                intravisit::walk_item(self, i);
-            }
-        }
-    }
-}
-
 fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>)
-                                                     -> Vec<CodegenUnit<'tcx>> {
+                                                     -> (Vec<CodegenUnit<'tcx>>, SymbolMap<'tcx>) {
     let time_passes = scx.sess().time_passes();
 
     let collection_mode = match scx.sess().opts.debugging_opts.print_trans_items {
@@ -2922,9 +2703,12 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
         None => TransItemCollectionMode::Lazy
     };
 
-    let (items, inlining_map) = time(time_passes, "translation item collection", || {
-        collector::collect_crate_translation_items(&scx, collection_mode)
+    let (items, inlining_map) =
+        time(time_passes, "translation item collection", || {
+            collector::collect_crate_translation_items(&scx, collection_mode)
     });
+
+    let symbol_map = SymbolMap::build(scx, items.iter().cloned());
 
     let strategy = if scx.sess().opts.debugging_opts.incremental.is_some() {
         PartitioningStrategy::PerModule
@@ -2936,8 +2720,20 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
         partitioning::partition(scx.tcx(),
                                 items.iter().cloned(),
                                 strategy,
-                                &inlining_map)
+                                &inlining_map,
+                                scx.reachable())
     });
+
+    assert!(scx.tcx().sess.opts.cg.codegen_units == codegen_units.len() ||
+            scx.tcx().sess.opts.debugging_opts.incremental.is_some());
+
+    {
+        let mut ccx_map = scx.translation_items().borrow_mut();
+
+        for trans_item in items.iter().cloned() {
+            ccx_map.insert(trans_item);
+        }
+    }
 
     if scx.sess().opts.debugging_opts.print_trans_items.is_some() {
         let mut item_to_cgus = HashMap::new();
@@ -2990,13 +2786,26 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
         for item in item_keys {
             println!("TRANS_ITEM {}", item);
         }
+    }
 
-        let mut ccx_map = scx.translation_items().borrow_mut();
+    (codegen_units, symbol_map)
+}
 
-        for cgi in items {
-            ccx_map.insert(cgi, TransItemState::PredictedButNotGenerated);
+fn symbol_for_def_id<'a, 'tcx>(def_id: DefId,
+                               scx: &SharedCrateContext<'a, 'tcx>,
+                               symbol_map: &SymbolMap<'tcx>)
+                               -> String {
+    // Just try to look things up in the symbol map. If nothing's there, we
+    // recompute.
+    if let Some(node_id) = scx.tcx().map.as_local_node_id(def_id) {
+        if let Some(sym) = symbol_map.get(TransItem::Static(node_id)) {
+            return sym.to_owned();
         }
     }
 
-    codegen_units
+    let instance = Instance::mono(scx, def_id);
+
+    symbol_map.get(TransItem::Fn(instance))
+              .map(str::to_owned)
+              .unwrap_or_else(|| instance.symbol_name(scx))
 }

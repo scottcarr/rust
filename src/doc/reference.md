@@ -853,6 +853,20 @@ extern crate std; // equivalent to: extern crate std as std;
 extern crate std as ruststd; // linking to 'std' under another name
 ```
 
+When naming Rust crates, hyphens are disallowed. However, Cargo packages may
+make use of them. In such case, when `Cargo.toml` doesn't specify a crate name,
+Cargo will transparently replace `-` with `_` (Refer to [RFC 940] for more
+details).
+
+Here is an example:
+
+```{.ignore}
+// Importing the Cargo package hello-world
+extern crate hello_world; // hyphen replaced with an underscore
+```
+
+[RFC 940]: https://github.com/rust-lang/rfcs/blob/master/text/0940-hyphens-considered-harmful.md
+
 #### Use declarations
 
 A _use declaration_ creates one or more local name bindings synonymous with
@@ -2633,7 +2647,7 @@ comma:
 
 There are several forms of struct expressions. A _struct expression_
 consists of the [path](#paths) of a [struct item](#structs), followed by
-a brace-enclosed list of one or more comma-separated name-value pairs,
+a brace-enclosed list of zero or more comma-separated name-value pairs,
 providing the field values of a new instance of the struct. A field name
 can be any identifier, and is separated from its value expression by a colon.
 The location denoted by a struct field is mutable if and only if the
@@ -2652,10 +2666,12 @@ The following are examples of struct expressions:
 
 ```
 # struct Point { x: f64, y: f64 }
+# struct NothingInMe { }
 # struct TuplePoint(f64, f64);
 # mod game { pub struct User<'a> { pub name: &'a str, pub age: u32, pub score: usize } }
 # struct Cookie; fn some_fn<T>(t: T) {}
 Point {x: 10.0, y: 20.0};
+NothingInMe {};
 TuplePoint(10.0, 20.0);
 let u = game::User {name: "Joe", age: 35, score: 100_000};
 some_fn::<Cookie>(Cookie);
@@ -3742,9 +3758,9 @@ Since `'static` "lives longer" than `'a`, `&'static str` is a subtype of
 
 ## Type coercions
 
-Coercions are defined in [RFC401]. A coercion is implicit and has no syntax.
+Coercions are defined in [RFC 401]. A coercion is implicit and has no syntax.
 
-[RFC401]: https://github.com/rust-lang/rfcs/blob/master/text/0401-coercions.md
+[RFC 401]: https://github.com/rust-lang/rfcs/blob/master/text/0401-coercions.md
 
 ### Coercion sites
 
@@ -3884,7 +3900,7 @@ Coercion is allowed between the following types:
 
     In the future, coerce_inner will be recursively extended to tuples and
     structs. In addition, coercions from sub-traits to super-traits will be
-    added. See [RFC401] for more details.
+    added. See [RFC 401] for more details.
 
 # Special traits
 

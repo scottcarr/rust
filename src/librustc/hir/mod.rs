@@ -487,8 +487,7 @@ impl Pat {
             PatKind::Lit(_) |
             PatKind::Range(_, _) |
             PatKind::Binding(..) |
-            PatKind::Path(..) |
-            PatKind::QPath(_, _) => {
+            PatKind::Path(..) => {
                 true
             }
         }
@@ -538,15 +537,9 @@ pub enum PatKind {
     /// 0 <= position <= subpats.len()
     TupleStruct(Path, HirVec<P<Pat>>, Option<usize>),
 
-    /// A path pattern.
+    /// A possibly qualified path pattern.
     /// Such pattern can be resolved to a unit struct/variant or a constant.
-    Path(Path),
-
-    /// An associated const named using the qualified path `<T>::CONST` or
-    /// `<T as Trait>::CONST`. Associated consts from inherent impls can be
-    /// referred to as simply `T::CONST`, in which case they will end up as
-    /// PatKind::Path, and the resolver will have to sort that out.
-    QPath(QSelf, Path),
+    Path(Option<QSelf>, Path),
 
     /// A tuple pattern `(a, b)`.
     /// If the `..` pattern fragment is present, then `Option<usize>` denotes its position.
@@ -836,7 +829,7 @@ pub enum Expr_ {
     ExprVec(HirVec<P<Expr>>),
     /// A function call
     ///
-    /// The first field resolves to the function itself,
+    /// The first field resolves to the function itself (usually an `ExprPath`),
     /// and the second field is the list of arguments
     ExprCall(P<Expr>, HirVec<P<Expr>>),
     /// A method call (`x.foo::<Bar, Baz>(a, b, c, d)`)
@@ -845,9 +838,9 @@ pub enum Expr_ {
     /// The vector of `Ty`s are the ascripted type parameters for the method
     /// (within the angle brackets).
     ///
-    /// The first element of the vector of `Expr`s is the expression that evaluates
-    /// to the object on which the method is being called on (the receiver),
-    /// and the remaining elements are the rest of the arguments.
+    /// The first element of the vector of `Expr`s is the expression that
+    /// evaluates to the object on which the method is being called on (the
+    /// receiver), and the remaining elements are the rest of the arguments.
     ///
     /// Thus, `x.foo::<Bar, Baz>(a, b, c, d)` is represented as
     /// `ExprMethodCall(foo, [Bar, Baz], [x, a, b, c, d])`.
@@ -919,13 +912,13 @@ pub enum Expr_ {
     /// Inline assembly (from `asm!`), with its outputs and inputs.
     ExprInlineAsm(InlineAsm, Vec<P<Expr>>, Vec<P<Expr>>),
 
-    /// A struct literal expression.
+    /// A struct or struct-like variant literal expression.
     ///
     /// For example, `Foo {x: 1, y: 2}`, or
     /// `Foo {x: 1, .. base}`, where `base` is the `Option<Expr>`.
     ExprStruct(Path, HirVec<Field>, Option<P<Expr>>),
 
-    /// A vector literal constructed from one repeated element.
+    /// An array literal constructed from one repeated element.
     ///
     /// For example, `[1; 5]`. The first expression is the element
     /// to be repeated; the second is the number of times to repeat it.
@@ -950,14 +943,21 @@ pub struct QSelf {
     pub position: usize,
 }
 
+/// Hints at the original code for a `match _ { .. }`
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub enum MatchSource {
+    /// A `match _ { .. }`
     Normal,
+    /// An `if let _ = _ { .. }` (optionally with `else { .. }`)
     IfLetDesugar {
         contains_else_clause: bool,
     },
+    /// A `while let _ = _ { .. }` (which was desugared to a
+    /// `loop { match _ { .. } }`)
     WhileLetDesugar,
+    /// A desugared `for _ in _ { .. }` loop
     ForLoopDesugar,
+    /// A desugared `?` operator
     TryDesugar,
 }
 
@@ -975,8 +975,7 @@ pub struct MutTy {
     pub mutbl: Mutability,
 }
 
-/// Represents a method's signature in a trait declaration,
-/// or in an implementation.
+/// Represents a method's signature in a trait declaration or implementation.
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct MethodSig {
     pub unsafety: Unsafety,
@@ -999,13 +998,20 @@ pub struct TraitItem {
     pub span: Span,
 }
 
+/// Represents a trait method or associated constant or type
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub enum TraitItem_ {
+    /// An associated constant with an optional value (otherwise `impl`s
+    /// must contain a value)
     ConstTraitItem(P<Ty>, Option<P<Expr>>),
+    /// A method with an optional body
     MethodTraitItem(MethodSig, Option<P<Block>>),
+    /// An associated type with (possibly empty) bounds and optional concrete
+    /// type
     TypeTraitItem(TyParamBounds, Option<P<Ty>>),
 }
 
+/// Represents anything within an `impl` block
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct ImplItem {
     pub id: NodeId,
@@ -1017,10 +1023,15 @@ pub struct ImplItem {
     pub span: Span,
 }
 
+/// Represents different contents within `impl`s
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub enum ImplItemKind {
+    /// An associated constant of the given type, set to the constant result
+    /// of the expression
     Const(P<Ty>, P<Expr>),
+    /// A method implementation with the given signature and body
     Method(MethodSig, P<Block>),
+    /// An associated type
     Type(P<Ty>),
 }
 

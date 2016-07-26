@@ -1198,17 +1198,15 @@ impl<I: ExactSizeIterator> ExactSizeIterator for Peekable<I> {}
 impl<I: Iterator> Peekable<I> {
     /// Returns a reference to the next() value without advancing the iterator.
     ///
-    /// The `peek()` method will return the value that a call to [`next()`] would
-    /// return, but does not advance the iterator. Like [`next()`], if there is
-    /// a value, it's wrapped in a `Some(T)`, but if the iterator is over, it
-    /// will return `None`.
+    /// Like [`next()`], if there is a value, it is wrapped in a `Some(T)`.
+    /// But if the iteration is over, `None` is returned.
     ///
     /// [`next()`]: trait.Iterator.html#tymethod.next
     ///
-    /// Because `peek()` returns reference, and many iterators iterate over
-    /// references, this leads to a possibly confusing situation where the
+    /// Because `peek()` returns a reference, and many iterators iterate over
+    /// references, there can be a possibly confusing situation where the
     /// return value is a double reference. You can see this effect in the
-    /// examples below, with `&&i32`.
+    /// examples below.
     ///
     /// # Examples
     ///
@@ -1225,13 +1223,13 @@ impl<I: Iterator> Peekable<I> {
     ///
     /// assert_eq!(iter.next(), Some(&2));
     ///
-    /// // we can peek() multiple times, the iterator won't advance
+    /// // The iterator does not advance even if we `peek` multiple times
     /// assert_eq!(iter.peek(), Some(&&3));
     /// assert_eq!(iter.peek(), Some(&&3));
     ///
     /// assert_eq!(iter.next(), Some(&3));
     ///
-    /// // after the iterator is finished, so is peek()
+    /// // After the iterator is finished, so is `peek()`
     /// assert_eq!(iter.peek(), None);
     /// assert_eq!(iter.next(), None);
     /// ```
@@ -1245,39 +1243,6 @@ impl<I: Iterator> Peekable<I> {
             Some(ref value) => Some(value),
             None => None,
         }
-    }
-
-    /// Checks if the iterator has finished iterating.
-    ///
-    /// Returns `true` if there are no more elements in the iterator, and
-    /// `false` if there are.
-    ///
-    /// # Examples
-    ///
-    /// Basic usage:
-    ///
-    /// ```
-    /// #![feature(peekable_is_empty)]
-    ///
-    /// let xs = [1, 2, 3];
-    ///
-    /// let mut iter = xs.iter().peekable();
-    ///
-    /// // there are still elements to iterate over
-    /// assert_eq!(iter.is_empty(), false);
-    ///
-    /// // let's consume the iterator
-    /// iter.next();
-    /// iter.next();
-    /// iter.next();
-    ///
-    /// assert_eq!(iter.is_empty(), true);
-    /// ```
-    #[unstable(feature = "peekable_is_empty", issue = "32111")]
-    #[inline]
-    #[rustc_deprecated(since = "1.10.0", reason = "replaced by .peek().is_none()")]
-    pub fn is_empty(&mut self) -> bool {
-        self.peek().is_none()
     }
 }
 

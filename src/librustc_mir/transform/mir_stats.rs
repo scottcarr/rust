@@ -47,18 +47,3 @@ impl<'tcx> MirPassHook<'tcx> for MirStats {
 }
 
 impl Pass for MirStats {}
-
-// struct MirStatsCollector {
-//     num_temporary_vars: usize,
-// }
-
-// impl<'tcx> Visitor<'tcx> for MirStatsCollector<'tcx> {
-//     fn visit_lvalue(&mut self,
-//                     lvalue: &Lvalue<'tcx>,
-//                     context: LvalueContext) {
-//         if let Lvalue::Temp(_) = lvalue {
-//             num_tempory_vars += 1;
-//         }
-//         self.super_lvalue(lvalue, context);
-//     }
-// }

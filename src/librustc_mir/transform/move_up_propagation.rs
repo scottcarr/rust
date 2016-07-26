@@ -26,6 +26,13 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     src: MirSource,
                     mir: &mut Mir<'tcx>) {
+        // we only return when mir_opt_level >= 2
+        match tcx.sess.opts.debugging_opts.mir_opt_level {
+            Some(0) |
+            Some(1) |
+            None => { return; },
+            _ => {}
+        };
         let node_id = src.item_id();
         let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));
         debug!("move-up-propagation on {:?}", node_path);

@@ -26,7 +26,7 @@ impl<'tcx> MirPass<'tcx> for MoveUpPropagation {
                     tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     src: MirSource,
                     mir: &mut Mir<'tcx>) {
-        // we only return when mir_opt_level >= 2
+        // we only return when mir_opt_level > 1
         match tcx.sess.opts.debugging_opts.mir_opt_level {
             Some(0) |
             Some(1) |

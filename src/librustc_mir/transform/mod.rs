@@ -18,3 +18,4 @@ pub mod promote_consts;
 pub mod qualify_consts;
 pub mod dump_mir;
 pub mod move_up_propagation;
+pub mod deaggregator;

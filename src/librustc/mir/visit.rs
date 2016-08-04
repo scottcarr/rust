@@ -597,6 +597,8 @@ macro_rules! make_mir_visitor {
                     }
                     ProjectionElem::Downcast(_adt_def, _variant_index) => {
                     }
+                    ProjectionElem::Discriminant => {
+                    }
                 }
             }
 

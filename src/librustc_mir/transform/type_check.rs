@@ -267,6 +267,7 @@ impl<'a, 'b, 'gcx, 'tcx> TypeVerifier<'a, 'b, 'gcx, 'tcx> {
                 }
                 LvalueTy::Ty { ty: fty }
             }
+            ProjectionElem::Discriminant => LvalueTy::Ty { ty: tcx.types.usize }
         }
     }
 

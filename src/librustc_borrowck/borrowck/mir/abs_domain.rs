@@ -59,6 +59,8 @@ impl<'tcx> Lift for LvalueElem<'tcx> {
                 },
             ProjectionElem::Downcast(a, u) =>
                 ProjectionElem::Downcast(a.clone(), u.clone()),
+            ProjectionElem::Discriminant =>
+                ProjectionElem::Discriminant,
         }
     }
 }

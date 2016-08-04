@@ -778,6 +778,8 @@ pub enum ProjectionElem<'tcx, V> {
     /// this for ADTs with more than one variant. It may be better to
     /// just introduce it always, or always for enums.
     Downcast(AdtDef<'tcx>, usize),
+
+    Discriminant,
 }
 
 /// Alias for projections as they appear in lvalues, where the base is an lvalue
@@ -825,6 +827,8 @@ impl<'tcx> Debug for Lvalue<'tcx> {
                 write!(fmt, "return"),
             Projection(ref data) =>
                 match data.elem {
+                    ProjectionElem::Discriminant =>
+                        write!(fmt, "{:?}.discriminant", data.base),
                     ProjectionElem::Downcast(ref adt_def, index) =>
                         write!(fmt, "({:?} as {})", data.base, adt_def.variants[index].name),
                     ProjectionElem::Deref =>

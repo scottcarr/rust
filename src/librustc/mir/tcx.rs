@@ -86,7 +86,8 @@ impl<'a, 'gcx, 'tcx> LvalueTy<'tcx> {
                         bug!("cannot downcast non-enum type: `{:?}`", self)
                     }
                 },
-            ProjectionElem::Field(_, fty) => LvalueTy::Ty { ty: fty }
+            ProjectionElem::Field(_, fty) => LvalueTy::Ty { ty: fty },
+            ProjectionElem::Discriminant => LvalueTy::Ty {ty : tcx.types.usize }, // SCOTT: maybe?
         }
     }
 }

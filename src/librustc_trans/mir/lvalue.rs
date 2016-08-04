@@ -149,6 +149,7 @@ impl<'bcx, 'tcx> MirContext<'bcx, 'tcx> {
                 };
 
                 let (llprojected, llextra) = match projection.elem {
+                    mir::ProjectionElem::Discriminant => panic!("not implemented!"),
                     mir::ProjectionElem::Deref => bug!(),
                     mir::ProjectionElem::Field(ref field, _) => {
                         let base_ty = tr_base.ty.to_ty(tcx);

@@ -515,6 +515,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Qualifier<'a, 'tcx, 'tcx> {
                         ProjectionElem::Downcast(..) => {
                             this.not_const()
                         }
+                        ProjectionElem::Discriminant => panic!("SCOTT: I don't know.")
                     }
                 });
             }
